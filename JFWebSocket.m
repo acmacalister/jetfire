@@ -25,6 +25,7 @@
 //Constant Header Values.
 static const NSString *headerWSUpgradeName     = @"Upgrade";
 static const NSString *headerWSUpgradeValue    = @"websocket";
+static const NSString *headerWSHostName        = @"Host";
 static const NSString *headerWSConnectionName  = @"Connection";
 static const NSString *headerWSConnectionValue = @"Upgrade";
 static const NSString *headerWSProtocolName    = @"Sec-WebSocket-Protocol";
@@ -133,15 +134,18 @@ static int BUFFER_MAX = 2048;
     CFHTTPMessageSetHeaderFieldValue(urlRequest,
                                      (__bridge CFStringRef)headerOriginName,
                                      (__bridge CFStringRef)self.url.absoluteString);
+    CFHTTPMessageSetHeaderFieldValue(urlRequest,
+                                     (__bridge CFStringRef)headerWSHostName,
+                                     (__bridge CFStringRef)[NSString stringWithFormat:@"%@:%@",self.url.host,self.url.port]);
     
     NSData *serializedRequest = (__bridge NSData *)(CFHTTPMessageCopySerializedMessage(urlRequest));
     [self initStreamsWithData:serializedRequest];
 }
 /////////////////////////////////////////////////////////////////////////////
-//Random String of 20 lowercase chars, SHA1 and base64 encoded.
+//Random String of 16 lowercase chars, SHA1 and base64 encoded.
 - (NSString *)generateWebSocketKey
 {
-    NSInteger seed = 20;
+    NSInteger seed = 16;
     NSMutableString *string = [NSMutableString stringWithCapacity:seed];
     for (int i = 0; i < seed; i++) {
         [string appendFormat:@"%C", (unichar)('a' + arc4random_uniform(25))];
@@ -216,13 +220,15 @@ static int BUFFER_MAX = 2048;
 {
     uint8_t buffer[BUFFER_MAX];
     NSInteger length = [self.inputStream read:buffer maxLength:BUFFER_MAX];
-    if(!self.isConnected) {
-        self.isConnected = [self processHTTP:buffer length:length];
+    if(length > 0) {
         if(!self.isConnected) {
-            NSLog(@"tell delegate to disconnect or error or whatever.");
+            self.isConnected = [self processHTTP:buffer length:length];
+            if(!self.isConnected) {
+                NSLog(@"tell delegate to disconnect or error or whatever.");
+            }
+        } else {
+            [self processWebSocketMessage:buffer length:length];
         }
-    } else {
-        [self processWebSocketMessage:buffer length:length];
     }
 }
 /////////////////////////////////////////////////////////////////////////////
@@ -290,6 +296,7 @@ static int BUFFER_MAX = 2048;
     BOOL isMasked = (JFMaskMask & buffer[1]);
     uint8_t payloadLen = (JFPayloadLenMask & buffer[1]);
     if(isMasked || isRsv) {
+        //NSLog(@"masked buffer: %s",buffer);
         NSLog(@"masked and rsv data is not currently supported");
         return;
     }
