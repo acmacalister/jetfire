@@ -10,6 +10,31 @@
 
 #import "JFWebSocket.h"
 
+//this get the correct bits out by masking the bytes of the buffer.
+static const uint8_t JFFinMask             = 0x80;
+static const uint8_t JFOpCodeMask          = 0x0F;
+//static const uint8_t JFRSVMask             = 0x70;
+static const uint8_t JFMaskMask            = 0x80;
+static const uint8_t JFPayloadLenMask      = 0x7F;
+static const size_t  JFMaxFrameSize        = 32;
+
+//get the opCode from the packet
+typedef NS_ENUM(NSUInteger, JFOpCode) {
+    JFOpCodeContinueFrame = 0x0,
+    JFOpCodeTextFrame = 0x1,
+    JFOpCodeBinaryFrame = 0x2,
+    //3-7 are reserved.
+    JFOpCodeConnectionClose = 0x8,
+    JFOpCodePing = 0x9,
+    JFOpCodePong = 0xA,
+    //B-F reserved.
+};
+
+typedef NS_ENUM(NSUInteger, JFErrorCode) {
+    JFErrorCodeNormal  = 1000,
+    JFErrorCodeProtocol = 1002
+};
+
 @interface JFWebSocket ()<NSStreamDelegate>
 
 @property(nonatomic, strong)NSURL *url;
@@ -19,6 +44,9 @@
 @property(nonatomic, assign)BOOL isBinary;
 @property(nonatomic, strong)NSMutableData *bufferData;
 @property(nonatomic, strong)NSOperationQueue *writeQueue;
+@property(nonatomic, assign)BOOL isRunLoop;
+@property(nonatomic, assign)NSInteger expectedLength;
+@property(nonatomic, assign)JFOpCode currentCode;
 
 @end
 
@@ -35,26 +63,6 @@ static const NSString *headerWSVersionValue    = @"13";
 static const NSString *headerWSKeyName         = @"Sec-WebSocket-Key";
 static const NSString *headerOriginName        = @"Origin";
 static const NSString *headerWSAcceptName      = @"Sec-WebSocket-Accept";
-
-//this get the correct bits out by masking the bytes of the buffer.
-static const uint8_t JFFinMask             = 0x80;
-static const uint8_t JFOpCodeMask          = 0x0F;
-static const uint8_t JFRSVMask             = 0x70;
-static const uint8_t JFMaskMask            = 0x80;
-static const uint8_t JFPayloadLenMask      = 0x7F;
-static const size_t  JFMaxFrameSize        = 32;
-
-//get the opCode from the packet
-typedef NS_ENUM(NSUInteger, JFOpCode) {
-    JFOpCodeContinueFrame = 0x0,
-    JFOpCodeTextFrame = 0x1,
-    JFOpCodeBinaryFrame = 0x2,
-    //3-7 are reserved.
-    JFOpCodeConnectionClose = 0x8,
-    JFOpCodePing = 0x9,
-    JFOpCodePong = 0xA,
-    //B-F reserved.
-};
 
 //Class Constants
 static char CRLFBytes[] = {'\r', '\n', '\r', '\n'};
@@ -84,7 +92,7 @@ static int BUFFER_MAX = 2048;
 /////////////////////////////////////////////////////////////////////////////
 - (void)disconnect
 {
-    [self dequeueWrite:[NSData data] withCode:JFOpCodeConnectionClose];
+    [self writeError:JFErrorCodeNormal];
 }
 /////////////////////////////////////////////////////////////////////////////
 -(void)writeString:(NSString*)string
@@ -169,7 +177,8 @@ static int BUFFER_MAX = 2048;
     [self.inputStream open];
     [self.outputStream open];
     [self.outputStream write:[data bytes] maxLength:[data length]];
-    while (true)
+    self.isRunLoop = YES;
+    while (self.isRunLoop)
         [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate distantFuture]];
 }
 /////////////////////////////////////////////////////////////////////////////
@@ -193,22 +202,43 @@ static int BUFFER_MAX = 2048;
             break;
         }
         case NSStreamEventHasSpaceAvailable:
+        {
             //NSLog(@"space available");
             break;
+        }
         case NSStreamEventErrorOccurred:
-            NSLog(@"error occurred: %@", [aStream streamError]);
+        {
+            NSLog(@"error occurred: %@ %@", aStream, [aStream streamError]);
+            [self disconnectStream];
             break;
+        }
         case NSStreamEventEndEncountered:
-            //NSLog(@"end event");
-            self.isConnected = NO;
-            if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:)]) {
-                dispatch_async(dispatch_get_main_queue(),^{
-                    [self.delegate websocketDidDisconnect:self];
-                });
-            }
+        {
+            NSLog(@"end event");
+            [self disconnectStream];
             break;
+        }
         default:
             break;
+    }
+}
+/////////////////////////////////////////////////////////////////////////////
+-(void)disconnectStream
+{
+    NSLog(@"disconnect stream");
+    [self.inputStream removeFromRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
+    [self.outputStream removeFromRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
+    [self.outputStream close];
+    [self.inputStream close];
+    self.outputStream = nil;
+    self.inputStream = nil;
+    self.isRunLoop = NO;
+    self.isConnected = NO;
+
+    if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:)]) {
+        dispatch_async(dispatch_get_main_queue(),^{
+            [self.delegate websocketDidDisconnect:self];
+        });
     }
 }
 /////////////////////////////////////////////////////////////////////////////
@@ -283,57 +313,86 @@ static int BUFFER_MAX = 2048;
     return NO;
 }
 /////////////////////////////////////////////////////////////////////////////
+-(void)writeError:(uint16_t)code
+{
+    uint16_t buffer[1];
+    buffer[0] = CFSwapInt16BigToHost(code);
+    [self dequeueWrite:[NSData dataWithBytes:buffer length:sizeof(uint16_t)] withCode:JFOpCodeConnectionClose];
+}
+/////////////////////////////////////////////////////////////////////////////
 //Process Websocket Message...
 - (void)processWebSocketMessage:(uint8_t*)buffer length:(NSInteger)bufferLen
 {
     if(!self.bufferData)
         self.bufferData = [NSMutableData new];
-    BOOL isFin = (JFFinMask & buffer[0]);
-    BOOL isRsv = (JFRSVMask & buffer[0]);
-    uint8_t receivedOpcode = (JFOpCodeMask & buffer[0]);
-    //NSLog(@"opcode: 0x%x",receivedOpcode);
-    JFOpCode code = receivedOpcode;
-    BOOL isMasked = (JFMaskMask & buffer[1]);
-    uint8_t payloadLen = (JFPayloadLenMask & buffer[1]);
-    if(isMasked || isRsv) {
-        //NSLog(@"masked buffer: %s",buffer);
-        NSLog(@"masked and rsv data is not currently supported");
-        return;
-    }
-    if(code == JFOpCodePong) {
-        //the server is still up.
-        //Not sure if we should have a delegate or something.
-        return;
-    } else if(code == JFOpCodePing) {
-        //response to the ping.
-        [self dequeueWrite:[NSData data] withCode:JFOpCodePong];
-        return;
-    } else if(code == JFOpCodeConnectionClose) {
-        //the server disconnected us
-        [self.outputStream close];
-        [self.inputStream close];
-        return;
-    }
-    NSInteger offset = 2; //how many bytes do we need to skip for the header
-    NSInteger dataLength = payloadLen;
-    if(payloadLen == 126) {
-        dataLength = CFSwapInt16BigToHost(*(uint16_t *)(buffer+offset));
-        offset += sizeof(uint16_t);
-    } else if(payloadLen == 127) {
-        dataLength = CFSwapInt64BigToHost(*(uint16_t *)(buffer+offset));
-        offset += sizeof(uint64_t);
-    }
-    if(receivedOpcode == JFOpCodeTextFrame) {
-        self.isBinary = NO;
+    BOOL isFin = NO;
+    if(self.expectedLength > 0){
+        if(bufferLen > 0) {
+            [self.bufferData appendBytes:buffer length:bufferLen];
+        }
     } else {
-       self.isBinary = YES;
+        NSInteger offset = 0;
+        isFin = (JFFinMask & buffer[0]);
+        //BOOL isRsv = (JFRSVMask & buffer[0]);
+        uint8_t receivedOpcode = (JFOpCodeMask & buffer[0]);
+        NSLog(@"opcode: 0x%x",receivedOpcode);
+        JFOpCode code = receivedOpcode;
+        BOOL isMasked = (JFMaskMask & buffer[1]);
+        uint8_t payloadLen = (JFPayloadLenMask & buffer[1]);
+        if(isMasked) {
+            NSLog(@"masked and rsv data is not currently supported");
+            return;
+        }
+        if(code == JFOpCodePong) {
+            //the server is still up.
+            //Not sure if we should have a delegate or something.
+            NSLog(@"pong so do nothing...");
+            return;
+        } else if(code == JFOpCodeConnectionClose) {
+            //the server disconnected us
+            [self disconnect];
+            return;
+        }
+        NSInteger dataLength = bufferLen;
+        offset = 2; //how many bytes do we need to skip for the header
+        dataLength = payloadLen;
+        BOOL isControl = (code == JFOpCodePing || code == JFOpCodePong || code == JFOpCodeConnectionClose);
+        if(isControl && (dataLength > 125 || !isFin)) {
+            [self writeError:JFErrorCodeProtocol];
+            return;
+        }
+        if(payloadLen == 127) {
+            dataLength = CFSwapInt64BigToHost(*(uint64_t *)(buffer+offset));
+            //NSLog(@"biggest dataLength: %d",dataLength);
+            offset += sizeof(uint64_t);
+        } else if(payloadLen == 126) {
+            dataLength = CFSwapInt16BigToHost(*(uint16_t *)(buffer+offset) );
+            //NSLog(@"bigger dataLength: %d",dataLength);
+            offset += sizeof(uint16_t);
+        }
+        if(receivedOpcode == JFOpCodeTextFrame) {
+            self.isBinary = NO;
+        } else {
+            self.isBinary = YES;
+        }
+        if(dataLength > 0 && bufferLen-offset > 0) {
+            [self.bufferData appendBytes:(buffer+offset) length:bufferLen-offset];
+        }
+        if(isFin) {
+            self.currentCode = code;
+            self.expectedLength = dataLength;
+        }
     }
-    [self.bufferData appendBytes:(buffer+offset) length:dataLength];
-    if(isFin) {
-        if(self.isBinary) {
+    if(self.bufferData.length >= self.expectedLength) {
+        if(self.currentCode == JFOpCodePing) {
+            NSData *responseData = [self.bufferData copy];
+            NSLog(@"ping ring!");
+            [self dequeueWrite:responseData withCode:JFOpCodePong];
+        } else if(self.isBinary) {
             if([self.delegate respondsToSelector:@selector(websocket:didReceiveData:)]) {
+                NSData *responseData = [self.bufferData copy];
                 dispatch_async(dispatch_get_main_queue(),^{
-                    [self.delegate websocket:self didReceiveData:self.bufferData];
+                    [self.delegate websocket:self didReceiveData:responseData];
                 });
             }
         } else {
@@ -344,6 +403,7 @@ static int BUFFER_MAX = 2048;
                 });
             }
         }
+        self.expectedLength = 0;
         [self.bufferData setLength:0]; //clear the buffer
     }
 }
@@ -366,22 +426,31 @@ static int BUFFER_MAX = 2048;
             buffer[1] |= dataLength;
         } else if(dataLength <= UINT16_MAX) {
             buffer[1] |= 126;
-            *((uint16_t *)(buffer + offset)) = CFSwapInt16BigToHost(dataLength);
+            *((uint16_t *)(buffer + offset)) = CFSwapInt16BigToHost((uint16_t)dataLength);
             offset += sizeof(uint16_t);
         } else {
             buffer[1] |= 127;
-            *((uint64_t *)(buffer + offset)) = CFSwapInt64BigToHost(dataLength);
+            *((uint64_t *)(buffer + offset)) = CFSwapInt64BigToHost((uint64_t)dataLength);
             offset += sizeof(uint64_t);
         }
-        for(size_t i = 0; i < dataLength; i++) {
-            buffer[offset] = bytes[i];
-            offset += 1;
+        BOOL isMask = YES;
+        if(isMask) {
+            buffer[1] |= JFMaskMask;
+            uint8_t *mask_key = (buffer + offset);
+            SecRandomCopyBytes(kSecRandomDefault, sizeof(uint32_t), (uint8_t *)mask_key);
+            offset += sizeof(uint32_t);
+
+            for (size_t i = 0; i < dataLength; i++) {
+                buffer[offset] = bytes[i] ^ mask_key[i % sizeof(uint32_t)];
+                offset += 1;
+            }
+        } else {
+            for(size_t i = 0; i < dataLength; i++) {
+                buffer[offset] = bytes[i];
+                offset += 1;
+            }
         }
         [self.outputStream write:[frame bytes] maxLength:offset];
-        if(code == JFOpCodeConnectionClose) {
-            [self.outputStream close];
-            [self.inputStream close];
-        }
     }];
 }
 /////////////////////////////////////////////////////////////////////////////
