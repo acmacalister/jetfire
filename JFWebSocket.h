@@ -28,8 +28,9 @@
 /**
  The websocket was disconnected from its host.
  @param socket is the current socket object.
+ @param error is return an error occured to trigger the disconnect.
  */
--(void)websocketDidDisconnect:(JFWebSocket*)socket;
+-(void)websocketDidDisconnect:(JFWebSocket*)socket error:(NSError*)error;
 
 /**
  The websocket got a text based message.
