@@ -56,6 +56,8 @@ typedef NS_ENUM(NSUInteger, JFCloseCode) {
 @property(nonatomic, assign)NSInteger expectedLength;
 @property(nonatomic, assign)JFOpCode currentCode;
 @property(nonatomic, assign)NSInteger frameCount;
+@property(nonatomic, assign)BOOL isFinReady;
+@property(nonatomic, strong)NSMutableData *fragBuffer;
 
 @end
 
@@ -328,10 +330,14 @@ static int BUFFER_MAX = 2048;
     [self dequeueWrite:[NSData dataWithBytes:buffer length:sizeof(uint16_t)] withCode:JFOpCodeConnectionClose];
 }
 /////////////////////////////////////////////////////////////////////////////
--(BOOL)parseWebSocketMessage:(uint8_t*)buffer length:(NSInteger)bufferLen
+-(uint16_t)parseWebSocketMessage:(uint8_t*)buffer length:(NSInteger)bufferLen
 {
-    if(!self.bufferData)
+    //NSData *testData = [NSData dataWithBytes:buffer length:bufferLen];
+    //NSLog(@"data: %s",(char*)testData.bytes);
+    if(!self.bufferData) {
         self.bufferData = [NSMutableData new];
+        self.fragBuffer = [NSMutableData new];
+    }
     BOOL isFin = NO;
     if(self.expectedLength > 0){
         if(bufferLen > 0) {
@@ -340,6 +346,7 @@ static int BUFFER_MAX = 2048;
     } else {
         NSInteger offset = 0;
         isFin = (JFFinMask & buffer[0]);
+        NSLog(@"isFin: %@",isFin ? @"YES": @"NO");
         //BOOL isRsv = (JFRSVMask & buffer[0]);
         uint8_t receivedOpcode = (JFOpCodeMask & buffer[0]);
         //NSLog(@"opcode: 0x%x",receivedOpcode);
@@ -348,18 +355,25 @@ static int BUFFER_MAX = 2048;
         if(isMasked || (JFRSVMask & buffer[0])) {
             NSLog(@"masked and rsv data is not currently supported");
             [self writeError:JFCloseCodeProtocolError];
-            return NO;
+            return -1;
+        }
+        if(isFin && !self.isFinReady) {
+            self.isFinReady = YES;
         }
         if(receivedOpcode == JFOpCodePong) {
             //the server is still up.
-            //Not sure if we should have a delegate or something.
             NSLog(@"pong so do nothing...");
-            return NO;
+            NSInteger len = bufferLen-2-payloadLen;
+            if(len > 0 && payloadLen > 0) {
+                [self processWebSocketMessage:(buffer+2+payloadLen) length:len];
+                //need to check response payload here as well.
+            }
+            return -1;
         } else if(receivedOpcode != JFOpCodeContinueFrame && receivedOpcode != JFOpCodePing && receivedOpcode != JFOpCodeTextFrame &&
                   receivedOpcode != JFOpCodeBinaryFrame && receivedOpcode != JFOpCodeConnectionClose) {
             NSLog(@"unknown opcode: 0x%x",receivedOpcode);
             [self writeError:JFCloseCodeProtocolError];
-            return NO;
+            return -1;
         }
         
         NSInteger dataLength = bufferLen;
@@ -368,18 +382,19 @@ static int BUFFER_MAX = 2048;
         BOOL isControl = (receivedOpcode == JFOpCodePing || receivedOpcode == JFOpCodePong || receivedOpcode == JFOpCodeConnectionClose);
         if(isControl && (dataLength > 125 || !isFin)) {
             [self writeError:JFCloseCodeProtocolError];
-            return NO;
+            return -1;
         }
         if (!isControl && receivedOpcode != 0 && self.frameCount > 0) {
             NSLog(@"error is control");
             [self writeError:JFCloseCodeProtocolError];
-            return NO;
+            return -1;
         }
         
         if (receivedOpcode == 0 && self.frameCount == 0) {
+            buffer[bufferLen] = '\0';
             NSLog(@"error on opcode!!");
             [self writeError:JFCloseCodeProtocolError];
-            return NO;
+            return -1;
         }
         if(payloadLen == 127) {
             dataLength = CFSwapInt64BigToHost(*(uint64_t *)(buffer+offset));
@@ -399,85 +414,99 @@ static int BUFFER_MAX = 2048;
                     code = JFCloseCodeProtocolError;
                 }
             }
-            [self writeError:code];
-            return NO;
+            //check response payload here...
+            NSLog(@"closing with code: %d",code);
+            //[self writeError:code];
+            return code;
         }
         
-        if(receivedOpcode == JFOpCodeTextFrame) {
+        if(receivedOpcode == 0) {
+            //does nothing
+        }
+        else if(receivedOpcode == JFOpCodeTextFrame) {
             self.isBinary = NO;
-        } else {
+        } else if(receivedOpcode == JFOpCodeBinaryFrame) {
             self.isBinary = YES;
         }
         if(dataLength > 0 && bufferLen-offset > 0) {
             [self.bufferData appendBytes:(buffer+offset) length:bufferLen-offset];
         }
-        if(isFin || (dataLength < bufferLen)) {
+        if(isFin || (dataLength < bufferLen) || receivedOpcode != 0) {
             self.currentCode = receivedOpcode;
             self.expectedLength = dataLength;
         }
     }
     self.frameCount++;
-    return YES;
+    return 0;
 }
 /////////////////////////////////////////////////////////////////////////////
 //Process Websocket Message...
 - (void)processWebSocketMessage:(uint8_t*)buffer length:(NSInteger)bufferLen
 {
-    if(![self parseWebSocketMessage:buffer length:bufferLen]) {
+    uint16_t closeCode = [self parseWebSocketMessage:buffer length:bufferLen];
+    if(closeCode < 0) {
         return;
     }
     if(self.bufferData.length >= self.expectedLength) {
         NSData *subData = self.bufferData;
-        if(self.currentCode != JFOpCodePing) {
+        if(self.expectedLength > 0) {
             subData = [self.bufferData subdataWithRange:NSMakeRange(0, self.expectedLength)];
-            if(self.expectedLength < self.bufferData.length) {
-                NSMutableData *collect = [NSMutableData dataWithData:subData];
-                while(true) {
-                    NSData *nextData = [self.bufferData subdataWithRange:NSMakeRange(self.expectedLength,self.bufferData.length-self.expectedLength)];
-                    if(nextData.length == 0)
-                        break;
-                    self.expectedLength = 0;
-                    [self.bufferData setLength:0];
-                    [self parseWebSocketMessage:(uint8_t*)[nextData bytes] length:[nextData length]];
-                    NSData *subData = [self.bufferData subdataWithRange:NSMakeRange(0, self.expectedLength)];
-                    [collect appendData:subData];
+        }
+        BOOL doClose = YES;
+        if(!self.isFinReady) {
+            NSLog(@"append data: %s",[subData bytes]);
+            [self.fragBuffer appendData:subData];
+        } else {
+            self.isFinReady = NO;
+            if(self.currentCode == JFOpCodePing) {
+                NSLog(@"pong: %s",[subData bytes]);
+                [self dequeueWrite:[subData copy] withCode:JFOpCodePong];
+            } else {
+                [self.fragBuffer appendData:subData];
+                subData = self.fragBuffer;
+                NSLog(@"finshed data: %s",[subData bytes]);
+                if(self.isBinary) {
+                    if([self.delegate respondsToSelector:@selector(websocket:didReceiveData:)]) {
+                        doClose = NO;
+                        subData = [subData copy];
+                        dispatch_async(dispatch_get_main_queue(),^{
+                            [self.delegate websocket:self didReceiveData:subData];
+                            if([self processCloseCode:closeCode]) {
+                                return;
+                            }
+                        });
+                    }
+                } else {
+                    NSString *str = [[NSString alloc] initWithData:subData encoding:NSUTF8StringEncoding];
+                    NSLog(@"str: %@",str);
+                    if(!str) {
+                        [self writeError:JFCloseCodeEncoding];
+                        return;
+                    }
+                    if([self.delegate respondsToSelector:@selector(websocket:didReceiveMessage:)]) {
+                        doClose = NO;
+                        dispatch_async(dispatch_get_main_queue(),^{
+                            [self.delegate websocket:self didReceiveMessage:str];
+                            if([self processCloseCode:closeCode]) {
+                                return;
+                            }
+                        });
+                    }
                 }
-                subData = collect;
+                [self.fragBuffer setLength:0];
+                self.frameCount = 0;
             }
         }
-        if(self.currentCode == JFOpCodePing) {
-            //NSLog(@"subData: %s",[subData bytes]);
-            if(subData == self.bufferData) {
-                subData = [self.bufferData copy];
-            }
-            [self dequeueWrite:subData withCode:JFOpCodePong];
-        } else if(self.isBinary) {
-            if([self.delegate respondsToSelector:@selector(websocket:didReceiveData:)]) {
-                dispatch_async(dispatch_get_main_queue(),^{
-                    [self.delegate websocket:self didReceiveData:subData];
-                });
-            }
-        } else {
-            NSString *str = [[NSString alloc] initWithData:subData encoding:NSUTF8StringEncoding];
-            if(!str) {
-                [self writeError:JFCloseCodeEncoding];
-                return;
-            }
-            if([self.delegate respondsToSelector:@selector(websocket:didReceiveMessage:)]) {
-                dispatch_async(dispatch_get_main_queue(),^{
-                    [self.delegate websocket:self didReceiveMessage:str];
-                });
-            }
+        if(doClose && [self processCloseCode:closeCode]) {
+            return;
         }
         NSData *nextData = nil;
-        if(self.currentCode == JFOpCodePing) {
-            if(self.expectedLength < self.bufferData.length) {
-                nextData = [self.bufferData subdataWithRange:NSMakeRange(self.expectedLength,self.bufferData.length-self.expectedLength)];
-            }
+        if(self.expectedLength < self.bufferData.length) {
+            nextData = [self.bufferData subdataWithRange:NSMakeRange(self.expectedLength,self.bufferData.length-self.expectedLength)];
         }
+        
         self.expectedLength = 0;
         [self.bufferData setLength:0]; //clear the buffer
-        self.frameCount = 0;
         if(nextData) {
             [self processWebSocketMessage:(uint8_t*)[nextData bytes] length:[nextData length]];
         }
@@ -485,8 +514,18 @@ static int BUFFER_MAX = 2048;
     
 }
 /////////////////////////////////////////////////////////////////////////////
+-(BOOL)processCloseCode:(uint16_t)code
+{
+    if(code > 0) {
+        [self writeError:code];
+        return YES;
+    }
+    return NO;
+}
+/////////////////////////////////////////////////////////////////////////////
 -(void)dequeueWrite:(NSData*)data withCode:(JFOpCode)code
 {
+    NSLog(@"write a code: %d",code);
     if(!self.writeQueue) {
         self.writeQueue = [[NSOperationQueue alloc] init];
         self.writeQueue.maxConcurrentOperationCount = 1;
