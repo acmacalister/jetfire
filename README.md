@@ -3,7 +3,7 @@ jetfire
 
 WebSocket [RFC 6455](http://tools.ietf.org/html/rfc6455) client library for iOS and OSX.
 
-Jetfire conforms to all of the base [Autobahn test suite](http://autobahn.ws/testsuite/). The library is very simple and only a few hundred lines of code, but fully featured. It is 
+Jetfire conforms to all of the base [Autobahn test suite](http://autobahn.ws/testsuite/). The library is very simple and only a few hundred lines of code, but fully featured. It runs completely on a background thread, so processing will never block the main thread. 
 
 ## Example ##
 
