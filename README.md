@@ -31,7 +31,7 @@ Now for the delegate methods.
 /////////////////////////////////////////////////////////////////////////////
 -(void)websocket:(JFWebSocket*)socket didReceiveMessage:(NSString*)string
 {
-    //NSLog(@"got some text: %@",string);
+    NSLog(@"got some text: %@",string);
     dispatch_async(dispatch_get_main_queue(),^{
 	//do some UI work
     });
