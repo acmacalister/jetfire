@@ -46,6 +46,14 @@
  */
 -(void)websocket:(JFWebSocket*)socket didReceiveData:(NSData*)data;
 
+
+/**
+ There was an error when writing (sending data to the server).
+ @param socket is the current socket object.
+ @param error is an error that occured when writing.
+ */
+-(void)websocketDidWriteError:(JFWebSocket*)socket error:(NSError*)error;
+
 @end
 
 @interface JFWebSocket : NSObject

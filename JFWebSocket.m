@@ -278,7 +278,8 @@ static int BUFFER_MAX = 2048;
             if(!self.isConnected) {
                 self.isConnected = [self processHTTP:buffer length:length];
                 if(!self.isConnected) {
-                    NSLog(@"tell delegate to disconnect or error or whatever.");
+                    if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)])
+                        [self.delegate websocketDidDisconnect:self error:[self errorWithDetail:@"Invalid HTTP upgrade" code:1]];
                 }
             } else {
                 BOOL process = NO;
@@ -392,25 +393,26 @@ static int BUFFER_MAX = 2048;
         }
     } else {
         BOOL isFin = (JFFinMask & buffer[0]);
-        //NSLog(@"isFin: %@",isFin ? @"YES": @"NO");
         uint8_t receivedOpcode = (JFOpCodeMask & buffer[0]);
-        //NSLog(@"opcode: 0x%x",receivedOpcode);
         BOOL isMasked = (JFMaskMask & buffer[1]);
         uint8_t payloadLen = (JFPayloadLenMask & buffer[1]);
         NSInteger offset = 2; //how many bytes do we need to skip for the header
         if((isMasked  || (JFRSVMask & buffer[0])) && receivedOpcode != JFOpCodePong) {
-            NSLog(@"masked and rsv data is not currently supported");
+            if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)])
+                [self.delegate websocketDidDisconnect:self error:[self errorWithDetail:@"masked and rsv data is not currently supported" code:JFCloseCodeProtocolError]];
             [self writeError:JFCloseCodeProtocolError];
             return;
         }
         BOOL isControlFrame = (receivedOpcode == JFOpCodeConnectionClose || receivedOpcode == JFOpCodePing); //|| receivedOpcode == JFOpCodePong
         if(!isControlFrame && (receivedOpcode != JFOpCodeBinaryFrame && receivedOpcode != JFOpCodeContinueFrame && receivedOpcode != JFOpCodeTextFrame && receivedOpcode != JFOpCodePong)) {
-            NSLog(@"unknown opcode: 0x%x",receivedOpcode);
+            if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)])
+                [self.delegate websocketDidDisconnect:self error:[self errorWithDetail:[NSString stringWithFormat:@"unknown opcode: 0x%x",receivedOpcode] code:JFCloseCodeProtocolError]];
             [self writeError:JFCloseCodeProtocolError];
             return;
         }
         if(isControlFrame && !isFin) {
-            NSLog(@"control frames can't be fragmented");
+            if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)])
+                [self.delegate websocketDidDisconnect:self error:[self errorWithDetail:@"control frames can't be fragmented" code:JFCloseCodeProtocolError]];
             [self writeError:JFCloseCodeProtocolError];
             return;
         }
@@ -435,7 +437,6 @@ static int BUFFER_MAX = 2048;
                     code = JFCloseCodeProtocolError;
                 }
             }
-            NSLog(@"closing with code: %d",code);
             [self writeError:code];
             return;
         }
@@ -474,14 +475,16 @@ static int BUFFER_MAX = 2048;
             response = nil; //don't append pings
         }
         if(!isFin && receivedOpcode == JFOpCodeContinueFrame && !response) {
-            NSLog(@"nothing to continue");
+            if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)])
+                [self.delegate websocketDidDisconnect:self error:[self errorWithDetail:@"continue frame before a binary or text frame" code:JFCloseCodeProtocolError]];
             [self writeError:JFCloseCodeProtocolError];
             return;
         }
         BOOL isNew = NO;
         if(!response) {
             if(receivedOpcode == JFOpCodeContinueFrame) {
-                NSLog(@"first frame can't be a continue frame");
+                if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)])
+                    [self.delegate websocketDidDisconnect:self error:[self errorWithDetail:@"first frame can't be a continue frame" code:JFCloseCodeProtocolError]];
                 [self writeError:JFCloseCodeProtocolError];
                 return;
             }
@@ -494,7 +497,8 @@ static int BUFFER_MAX = 2048;
             if(receivedOpcode == JFOpCodeContinueFrame) {
                 response.bytesLeft = dataLength;
             } else {
-                NSLog(@"must be a continue frame");
+                if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)])
+                    [self.delegate websocketDidDisconnect:self error:[self errorWithDetail:@"second and beyond of fragment message must be a continue frame" code:JFCloseCodeProtocolError]];
                 [self writeError:JFCloseCodeProtocolError];
                 return;
             }
@@ -520,11 +524,8 @@ static int BUFFER_MAX = 2048;
 -(void)processExtra:(uint8_t*)buffer length:(NSInteger)bufferLen
 {
     if(bufferLen < 2) {
-        //NSLog(@"frag it");
         self.fragBuffer = [NSData dataWithBytes:buffer length:bufferLen];
     } else {
-        //NSLog(@"inspect: [%s]",buffer);
-        //NSLog(@"mor data");
         [self processRawMessage:buffer length:bufferLen];
     }
 }
@@ -615,7 +616,8 @@ static int BUFFER_MAX = 2048;
             }
             NSInteger len = [self.outputStream write:([frame bytes]+total) maxLength:offset-total];
             if(len < 0) {
-                //probably should throw an error to the delegate or something
+                if([self.delegate respondsToSelector:@selector(websocketDidWriteError:error:)])
+                    [self.delegate websocketDidWriteError:self error:[self.outputStream streamError]];
                 break;
             } else {
                 total += len;
@@ -625,6 +627,13 @@ static int BUFFER_MAX = 2048;
             }
         }
     }];
+}
+////////////////////////////////////////////////////////////////////////////////////////////////////
+-(NSError*)errorWithDetail:(NSString*)detail code:(NSInteger)code
+{
+    NSMutableDictionary* details = [NSMutableDictionary dictionary];
+    [details setValue:detail forKey:NSLocalizedDescriptionKey];
+    return [[NSError alloc] initWithDomain:@"JFWebSocket" code:code userInfo:details];
 }
 /////////////////////////////////////////////////////////////////////////////
 -(void)dealloc
