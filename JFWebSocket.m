@@ -252,7 +252,8 @@ static int BUFFER_MAX = 2048;
 /////////////////////////////////////////////////////////////////////////////
 -(void)disconnectStream:(NSError*)error
 {
-    //NSLog(@"disconnect stream");
+    NSLog(@"disconnect stream: %@",[error localizedDescription]);
+    [self.writeQueue waitUntilAllOperationsAreFinished];
     [self.inputStream removeFromRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
     [self.outputStream removeFromRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
     [self.outputStream close];
@@ -275,25 +276,27 @@ static int BUFFER_MAX = 2048;
 /////////////////////////////////////////////////////////////////////////////
 - (void)processInputStream
 {
-    //NSLog(@"start read");
-    uint8_t buffer[BUFFER_MAX];
-    NSInteger length = [self.inputStream read:buffer maxLength:BUFFER_MAX];
-    //NSLog(@"read length: %d",length);
-    if(length > 0) {
-        if(!self.isConnected) {
-            self.isConnected = [self processHTTP:buffer length:length];
+    @autoreleasepool {
+        //NSLog(@"start read");
+        uint8_t buffer[BUFFER_MAX];
+        NSInteger length = [self.inputStream read:buffer maxLength:BUFFER_MAX];
+        //NSLog(@"read length: %d",length);
+        if(length > 0) {
             if(!self.isConnected) {
-                NSLog(@"tell delegate to disconnect or error or whatever.");
-            }
-        } else {
-            //[self processRawMessage:buffer length:length];
-            BOOL process = NO;
-            if(self.inputQueue.count == 0) {
-                process = YES;
-            }
-            [self.inputQueue addObject:[NSData dataWithBytes:buffer length:length]];
-            if(process) {
-                [self dequeueInput];
+                self.isConnected = [self processHTTP:buffer length:length];
+                if(!self.isConnected) {
+                    NSLog(@"tell delegate to disconnect or error or whatever.");
+                }
+            } else {
+                //[self processRawMessage:buffer length:length];
+                BOOL process = NO;
+                if(self.inputQueue.count == 0) {
+                    process = YES;
+                }
+                [self.inputQueue addObject:[NSData dataWithBytes:buffer length:length]];
+                if(process) {
+                    [self dequeueInput];
+                }
             }
         }
     }
@@ -314,6 +317,8 @@ static int BUFFER_MAX = 2048;
         }
         //NSLog(@"data len: %d",work.length);
         //NSLog(@"check: [%s]",(char*)work.bytes);
+        //totalSize += work.length;
+        //NSLog(@"totalSize: %d",totalSize);
         [self processRawMessage:(uint8_t*)work.bytes length:work.length];
         [self.inputQueue removeObject:data];
         [self dequeueInput];
@@ -380,8 +385,14 @@ static int BUFFER_MAX = 2048;
 /////////////////////////////////////////////////////////////////////////////
 -(void)processRawMessage:(uint8_t*)buffer length:(NSInteger)bufferLen
 {
-    //NSLog(@"process a message");
+    //NSLog(@"process a message: %s",buffer);
+    //NSLog(@"buffer len: %d",bufferLen);
     JFResponse *response = [self.readStack lastObject];
+    if(response && bufferLen < 2) {
+        NSLog(@"not long enough");
+        self.fragBuffer = [NSData dataWithBytes:buffer length:bufferLen];
+        return;
+    }
     if(response.bytesLeft > 0) {
         //NSLog(@"response bytesLeft: %d",response.bytesLeft);
         NSInteger len = response.bytesLeft;
@@ -398,33 +409,32 @@ static int BUFFER_MAX = 2048;
         NSInteger offset = bufferLen - extra;
         if(extra > 0) {
             //NSLog(@"extra data");
-            //[self processRawMessage:(buffer+offset) length:extra];
             [self processExtra:(buffer+offset) length:extra];
         }
     } else {
         BOOL isFin = (JFFinMask & buffer[0]);
         //NSLog(@"isFin: %@",isFin ? @"YES": @"NO");
-        //BOOL isRsv = (JFRSVMask & buffer[0]);
         uint8_t receivedOpcode = (JFOpCodeMask & buffer[0]);
         //NSLog(@"opcode: 0x%x",receivedOpcode);
         BOOL isMasked = (JFMaskMask & buffer[1]);
         uint8_t payloadLen = (JFPayloadLenMask & buffer[1]);
-        if(isMasked || (JFRSVMask & buffer[0])) {
+        NSInteger offset = 2; //how many bytes do we need to skip for the header
+        if((isMasked  || (JFRSVMask & buffer[0])) && receivedOpcode != JFOpCodePong) {
             NSLog(@"masked and rsv data is not currently supported");
             [self writeError:JFCloseCodeProtocolError];
             return;
         }
-        BOOL isControlFrame = (receivedOpcode == JFOpCodeConnectionClose || receivedOpcode == JFOpCodePing || receivedOpcode == JFOpCodePong);
-        if(!isControlFrame && (receivedOpcode != JFOpCodeBinaryFrame && receivedOpcode != JFOpCodeContinueFrame && receivedOpcode != JFOpCodeTextFrame)) {
+        BOOL isControlFrame = (receivedOpcode == JFOpCodeConnectionClose || receivedOpcode == JFOpCodePing); //|| receivedOpcode == JFOpCodePong
+        if(!isControlFrame && (receivedOpcode != JFOpCodeBinaryFrame && receivedOpcode != JFOpCodeContinueFrame && receivedOpcode != JFOpCodeTextFrame && receivedOpcode != JFOpCodePong)) {
             NSLog(@"unknown opcode: 0x%x",receivedOpcode);
             [self writeError:JFCloseCodeProtocolError];
+            return;
         }
         if(isControlFrame && !isFin) {
             NSLog(@"control frames can't be fragmented");
             [self writeError:JFCloseCodeProtocolError];
             return;
         }
-        NSInteger offset = 2; //how many bytes do we need to skip for the header
         if(receivedOpcode == JFOpCodeConnectionClose) {
             //the server disconnected us
             uint16_t code = JFCloseCodeNormal;
@@ -446,7 +456,7 @@ static int BUFFER_MAX = 2048;
                     code = JFCloseCodeProtocolError;
                 }
             }
-            //NSLog(@"closing with code: %d",code);
+            NSLog(@"closing with code: %d",code);
             [self writeError:code];
             return;
             //return code;
@@ -465,16 +475,10 @@ static int BUFFER_MAX = 2048;
             //NSLog(@"bigger dataLength: %d",dataLength);
             offset += sizeof(uint16_t);
         }
-        if(receivedOpcode == JFOpCodePong) {
-            NSInteger len = bufferLen-(offset+payloadLen);
-            if(len > 0) {
-                [self processRawMessage:(buffer+offset+payloadLen) length:len];
-            }
-            return;
-        }
         NSInteger len = dataLength;
         if(dataLength > bufferLen)
             len = bufferLen-offset;
+        //NSLog(@"response.data.length: %d",response.buffer.length);
         //NSLog(@"payload len: %d",payloadLen);
         //NSLog(@"datalength: %d",dataLength);
         //NSLog(@"bufferLen: %d",bufferLen);
@@ -485,6 +489,15 @@ static int BUFFER_MAX = 2048;
             data = [NSData data];
         } else {
             data = [NSData dataWithBytes:(buffer+offset) length:len];
+        }
+        if(receivedOpcode == JFOpCodePong) {
+            NSInteger step = (offset+payloadLen);
+            NSInteger extra = bufferLen-step;
+            if(extra > 0) {
+                NSLog(@"pong more");
+                [self processRawMessage:(buffer+step) length:extra];
+            }
+            return;
         }
         JFResponse *response = [self.readStack lastObject];
         if(isControlFrame) {
@@ -527,6 +540,7 @@ static int BUFFER_MAX = 2048;
 //        }
         response.frameCount++;
         response.isFin = isFin;
+        //NSLog(@"frame count: %d",response.frameCount);
         if(isNew) {
             [self.readStack addObject:response];
         }
@@ -537,7 +551,6 @@ static int BUFFER_MAX = 2048;
         //NSLog(@"extra: %d",extra);
         if(extra > 0) {
             //NSLog(@"mar data");
-            //[self processRawMessage:(buffer+step) length:extra];
             [self processExtra:(buffer+step) length:extra];
         }
     }
@@ -547,6 +560,7 @@ static int BUFFER_MAX = 2048;
 -(void)processExtra:(uint8_t*)buffer length:(NSInteger)bufferLen
 {
     if(bufferLen < 2) {
+        //NSLog(@"frag it");
         self.fragBuffer = [NSData dataWithBytes:buffer length:bufferLen];
     } else {
         //NSLog(@"inspect: [%s]",buffer);
@@ -596,16 +610,20 @@ static int BUFFER_MAX = 2048;
 /////////////////////////////////////////////////////////////////////////////
 -(void)dequeueWrite:(NSData*)data withCode:(JFOpCode)code
 {
-    //NSLog(@"write a code: %d",code);
+    NSLog(@"write a code: %d",code);
+    if(code == JFOpCodeTextFrame) {
+        //NSString *str = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+        //NSLog(@"write this text: %@",str);
+    }
     if(!self.writeQueue) {
         self.writeQueue = [[NSOperationQueue alloc] init];
         self.writeQueue.maxConcurrentOperationCount = 1;
     }
     //we have a queue so we can be thread safe.
     [self.writeQueue addOperationWithBlock:^{
-        NSInteger offset = 2; //how many bytes do we need to skip for the header
+        uint64_t offset = 2; //how many bytes do we need to skip for the header
         uint8_t *bytes = (uint8_t*)[data bytes];
-        NSInteger dataLength = data.length;
+        uint64_t dataLength = data.length;
         NSMutableData *frame = [[NSMutableData alloc] initWithLength:dataLength + JFMaxFrameSize];
         uint8_t *buffer = (uint8_t*)[frame mutableBytes];
         buffer[0] = JFFinMask | code;
@@ -637,9 +655,10 @@ static int BUFFER_MAX = 2048;
                 offset += 1;
             }
         }
-        NSInteger total = 0;
+        uint64_t total = 0;
         while (true) {
             if(!self.outputStream) {
+                NSLog(@"output stream died!");
                 break;
             }
             NSInteger len = [self.outputStream write:([frame bytes]+total) maxLength:offset-total];
@@ -650,6 +669,7 @@ static int BUFFER_MAX = 2048;
                 total += len;
             }
             if(total >= offset) {
+                NSLog(@"done writing!");
                 break;
             }
         }
