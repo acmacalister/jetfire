@@ -65,14 +65,6 @@ typedef NS_ENUM(NSUInteger, JFCloseCode) {
 @property(nonatomic, strong)NSMutableArray *inputQueue;
 @property(nonatomic, strong)NSData *fragBuffer;
 
-//you all go away!!!
-@property(nonatomic, assign)BOOL isBinary;
-@property(nonatomic, strong)NSMutableData *bufferData;
-@property(nonatomic, assign)NSInteger expectedLength;
-@property(nonatomic, assign)JFOpCode currentCode;
-@property(nonatomic, assign)NSInteger frameCount;
-@property(nonatomic, assign)BOOL isFinReady;
-
 @end
 
 //Constant Header Values.
@@ -160,9 +152,6 @@ static int BUFFER_MAX = 2048;
     CFHTTPMessageSetHeaderFieldValue(urlRequest,
                                      (__bridge CFStringRef)headerWSVersionName,
                                      (__bridge CFStringRef)headerWSVersionValue);
-    CFHTTPMessageSetHeaderFieldValue(urlRequest,
-                                     (__bridge CFStringRef)headerWSKeyName,
-                                     (__bridge CFStringRef)[self generateWebSocketKey]);
     CFHTTPMessageSetHeaderFieldValue(urlRequest,
                                      (__bridge CFStringRef)headerWSKeyName,
                                      (__bridge CFStringRef)[self generateWebSocketKey]);
