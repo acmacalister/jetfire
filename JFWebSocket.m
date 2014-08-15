@@ -64,6 +64,7 @@ typedef NS_ENUM(NSUInteger, JFCloseCode) {
 @property(nonatomic, strong)NSMutableArray *readStack;
 @property(nonatomic, strong)NSMutableArray *inputQueue;
 @property(nonatomic, strong)NSData *fragBuffer;
+@property(nonatomic, strong)NSMutableDictionary *headers;
 
 @end
 
@@ -127,6 +128,14 @@ static int BUFFER_MAX = 2048;
     [self dequeueWrite:data withCode:JFOpCodeBinaryFrame];
 }
 /////////////////////////////////////////////////////////////////////////////
+- (void)addHeader:(NSString*)value forKey:(NSString*)key
+{
+    if(!self.headers) {
+        self.headers = [[NSMutableDictionary alloc] init];
+    }
+    [self.headers setObject:value forKey:key];
+}
+/////////////////////////////////////////////////////////////////////////////
 
 #pragma mark - connect's internal supporting methods
 
@@ -140,6 +149,15 @@ static int BUFFER_MAX = 2048;
                                                              requestMethod,
                                                              url,
                                                              kCFHTTPVersion1_1);
+    
+    NSNumber *port = _url.port;
+    if (!port) {
+        if([self.url.scheme isEqualToString:@"wss"]){
+            port = @(443);
+        } else {
+            port = @(80);
+        }
+    }
     CFHTTPMessageSetHeaderFieldValue(urlRequest,
                                      (__bridge CFStringRef)headerWSUpgradeName,
                                      (__bridge CFStringRef)headerWSUpgradeValue);
@@ -162,8 +180,14 @@ static int BUFFER_MAX = 2048;
                                      (__bridge CFStringRef)headerWSHostName,
                                      (__bridge CFStringRef)[NSString stringWithFormat:@"%@:%@",self.url.host,self.url.port]);
     
+    for(NSString *key in self.headers) {
+        CFHTTPMessageSetHeaderFieldValue(urlRequest,
+                                         (__bridge CFStringRef)key,
+                                         (__bridge CFStringRef)self.headers[key]);
+    }
+    
     NSData *serializedRequest = (__bridge NSData *)(CFHTTPMessageCopySerializedMessage(urlRequest));
-    [self initStreamsWithData:serializedRequest];
+    [self initStreamsWithData:serializedRequest port:port];
 }
 /////////////////////////////////////////////////////////////////////////////
 //Random String of 16 lowercase chars, SHA1 and base64 encoded.
@@ -178,16 +202,20 @@ static int BUFFER_MAX = 2048;
 }
 /////////////////////////////////////////////////////////////////////////////
 //Sets up our reader/writer for the TCP stream.
-- (void)initStreamsWithData:(NSData *)data
+- (void)initStreamsWithData:(NSData *)data port:(NSNumber*)port
 {
     CFReadStreamRef readStream = NULL;
     CFWriteStreamRef writeStream = NULL;
-    CFStreamCreatePairWithSocketToHost(NULL, (__bridge CFStringRef)self.url.host, [self.url.port intValue], &readStream, &writeStream);
+    CFStreamCreatePairWithSocketToHost(NULL, (__bridge CFStringRef)self.url.host, [port intValue], &readStream, &writeStream);
     
     self.inputStream = (__bridge_transfer NSInputStream *)readStream;
     self.inputStream.delegate = self;
     self.outputStream = (__bridge_transfer NSOutputStream *)writeStream;
     self.outputStream.delegate = self;
+    if([self.url.scheme isEqualToString:@"wss"]) {
+        [self.inputStream setProperty:NSStreamSocketSecurityLevelNegotiatedSSL forKey:NSStreamSocketSecurityLevelKey];
+        [self.outputStream setProperty:NSStreamSocketSecurityLevelNegotiatedSSL forKey:NSStreamSocketSecurityLevelKey];
+    }
     [self.inputStream scheduleInRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
     [self.outputStream scheduleInRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
     [self.inputStream open];

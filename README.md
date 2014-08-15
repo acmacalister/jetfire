@@ -5,6 +5,8 @@ WebSocket [RFC 6455](http://tools.ietf.org/html/rfc6455) client library for iOS 
 
 Jetfire conforms to all of the base [Autobahn test suite](http://autobahn.ws/testsuite/). The library is very simple and only a few hundred lines of code, but fully featured. It runs completely on a background thread, so processing will never block the main thread. 
 
+jetfire also has a Swift counter part here: [starscream](https://github.com/daltoniam/starscream)
+
 ## Example ##
 
 Open a connection to your websocket server. self.socket is a property, so it can stick around.

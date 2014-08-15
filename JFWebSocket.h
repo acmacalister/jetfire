@@ -88,4 +88,11 @@
  */
 - (void)writeString:(NSString*)string;
 
+/**
+ Add a header to send along on the the HTTP connect.
+ @param: value is the string to send
+ @param: key is the HTTP key name to send
+ */
+- (void)addHeader:(NSString*)value forKey:(NSString*)key;
+
 @end
