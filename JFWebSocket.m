@@ -591,6 +591,16 @@ static int BUFFER_MAX = 2048;
     }
     //we have a queue so we can be thread safe.
     [self.writeQueue addOperationWithBlock:^{
+        //stream isn't ready, let's wait
+        int tries = 0;
+        while(!self.outputStream) {
+            if(tries < 5) {
+                sleep(1);
+            } else {
+                break;
+            }
+            tries++;
+        }
         uint64_t offset = 2; //how many bytes do we need to skip for the header
         uint8_t *bytes = (uint8_t*)[data bytes];
         uint64_t dataLength = data.length;
