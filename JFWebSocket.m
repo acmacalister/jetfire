@@ -559,12 +559,12 @@ static int BUFFER_MAX = 2048;
                 return NO;
             }
             if([self.delegate respondsToSelector:@selector(websocket:didReceiveMessage:)]) {
-                dispatch_async(dispatch_get_main_queue(),^{
+                dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),^{
                     [self.delegate websocket:self didReceiveMessage:str];
                 });
             }
         } else if([self.delegate respondsToSelector:@selector(websocket:didReceiveData:)]) {
-            dispatch_async(dispatch_get_main_queue(),^{
+            dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),^{
                 [self.delegate websocket:self didReceiveData:data];
             });
         }
