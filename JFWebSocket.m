@@ -152,7 +152,7 @@ static int BUFFER_MAX = 2048;
     
     NSNumber *port = _url.port;
     if (!port) {
-        if([self.url.scheme isEqualToString:@"wss"]){
+        if([self.url.scheme isEqualToString:@"wss"] || [self.url.scheme isEqualToString:@"https"]){
             port = @(443);
         } else {
             port = @(80);
@@ -212,7 +212,7 @@ static int BUFFER_MAX = 2048;
     self.inputStream.delegate = self;
     self.outputStream = (__bridge_transfer NSOutputStream *)writeStream;
     self.outputStream.delegate = self;
-    if([self.url.scheme isEqualToString:@"wss"]) {
+    if([self.url.scheme isEqualToString:@"wss"] || [self.url.scheme isEqualToString:@"https"]) {
         [self.inputStream setProperty:NSStreamSocketSecurityLevelNegotiatedSSL forKey:NSStreamSocketSecurityLevelKey];
         [self.outputStream setProperty:NSStreamSocketSecurityLevelNegotiatedSSL forKey:NSStreamSocketSecurityLevelKey];
     }
@@ -273,7 +273,7 @@ static int BUFFER_MAX = 2048;
     self.inputStream = nil;
     self.isRunLoop = NO;
     self.isConnected = NO;
-
+    
     if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)]) {
         dispatch_async(dispatch_get_main_queue(),^{
             [self.delegate websocketDidDisconnect:self error:error];
@@ -462,7 +462,7 @@ static int BUFFER_MAX = 2048;
         }
         NSInteger dataLength = payloadLen;
         if(payloadLen == 127) {
-            dataLength = CFSwapInt64BigToHost(*(uint64_t *)(buffer+offset));
+            dataLength = (NSInteger)CFSwapInt64BigToHost(*(uint64_t *)(buffer+offset));
             offset += sizeof(uint64_t);
         } else if(payloadLen == 126) {
             dataLength = CFSwapInt16BigToHost(*(uint16_t *)(buffer+offset) );
@@ -559,12 +559,12 @@ static int BUFFER_MAX = 2048;
                 return NO;
             }
             if([self.delegate respondsToSelector:@selector(websocket:didReceiveMessage:)]) {
-                dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),^{
+                dispatch_async(dispatch_get_main_queue(),^{
                     [self.delegate websocket:self didReceiveMessage:str];
                 });
             }
         } else if([self.delegate respondsToSelector:@selector(websocket:didReceiveData:)]) {
-            dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0),^{
+            dispatch_async(dispatch_get_main_queue(),^{
                 [self.delegate websocket:self didReceiveData:data];
             });
         }
@@ -593,7 +593,7 @@ static int BUFFER_MAX = 2048;
     [self.writeQueue addOperationWithBlock:^{
         //stream isn't ready, let's wait
         int tries = 0;
-        while(!self.outputStream) {
+        while(!self.outputStream || !self.isConnected) {
             if(tries < 5) {
                 sleep(1);
             } else {
@@ -604,7 +604,7 @@ static int BUFFER_MAX = 2048;
         uint64_t offset = 2; //how many bytes do we need to skip for the header
         uint8_t *bytes = (uint8_t*)[data bytes];
         uint64_t dataLength = data.length;
-        NSMutableData *frame = [[NSMutableData alloc] initWithLength:dataLength + JFMaxFrameSize];
+        NSMutableData *frame = [[NSMutableData alloc] initWithLength:(NSInteger)(dataLength + JFMaxFrameSize)];
         uint8_t *buffer = (uint8_t*)[frame mutableBytes];
         buffer[0] = JFFinMask | code;
         if(dataLength < 126) {
@@ -624,7 +624,7 @@ static int BUFFER_MAX = 2048;
             uint8_t *mask_key = (buffer + offset);
             SecRandomCopyBytes(kSecRandomDefault, sizeof(uint32_t), (uint8_t *)mask_key);
             offset += sizeof(uint32_t);
-
+            
             for (size_t i = 0; i < dataLength; i++) {
                 buffer[offset] = bytes[i] ^ mask_key[i % sizeof(uint32_t)];
                 offset += 1;
@@ -640,7 +640,7 @@ static int BUFFER_MAX = 2048;
             if(!self.outputStream) {
                 break;
             }
-            NSInteger len = [self.outputStream write:([frame bytes]+total) maxLength:offset-total];
+            NSInteger len = [self.outputStream write:([frame bytes]+total) maxLength:(NSInteger)(offset-total)];
             if(len < 0) {
                 if([self.delegate respondsToSelector:@selector(websocketDidWriteError:error:)])
                     [self.delegate websocketDidWriteError:self error:[self.outputStream streamError]];
