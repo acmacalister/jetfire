@@ -58,13 +58,13 @@ typedef NS_ENUM(NSUInteger, JFCloseCode) {
 @property(nonatomic, strong)NSURL *url;
 @property(nonatomic, strong)NSInputStream *inputStream;
 @property(nonatomic, strong)NSOutputStream *outputStream;
-@property(nonatomic, assign)BOOL isConnected;
 @property(nonatomic, strong)NSOperationQueue *writeQueue;
 @property(nonatomic, assign)BOOL isRunLoop;
 @property(nonatomic, strong)NSMutableArray *readStack;
 @property(nonatomic, strong)NSMutableArray *inputQueue;
 @property(nonatomic, strong)NSData *fragBuffer;
 @property(nonatomic, strong)NSMutableDictionary *headers;
+@property(nonatomic, strong)NSArray *optProtocols;
 
 @end
 
@@ -75,7 +75,6 @@ static const NSString *headerWSHostName        = @"Host";
 static const NSString *headerWSConnectionName  = @"Connection";
 static const NSString *headerWSConnectionValue = @"Upgrade";
 static const NSString *headerWSProtocolName    = @"Sec-WebSocket-Protocol";
-static const NSString *headerWSProtocolValue   = @"chat, superchat";
 static const NSString *headerWSVersionName     = @"Sec-Websocket-Version";
 static const NSString *headerWSVersionValue    = @"13";
 static const NSString *headerWSKeyName         = @"Sec-WebSocket-Key";
@@ -90,12 +89,14 @@ static int BUFFER_MAX = 2048;
 
 /////////////////////////////////////////////////////////////////////////////
 //Default initializer
-- (instancetype)initWithURL:(NSURL *)url
+- (instancetype)initWithURL:(NSURL *)url protocols:(NSArray*)protocols
 {
     if(self = [super init]) {
+        self.voipEnabled = NO;
         self.url = url;
         self.readStack = [NSMutableArray new];
         self.inputQueue = [NSMutableArray new];
+        self.optProtocols = protocols;
     }
     
     return self;
@@ -158,6 +159,10 @@ static int BUFFER_MAX = 2048;
             port = @(80);
         }
     }
+    NSString *protocols = @"";
+    if(self.optProtocols) {
+        protocols = [self.optProtocols componentsJoinedByString:@","];
+    }
     CFHTTPMessageSetHeaderFieldValue(urlRequest,
                                      (__bridge CFStringRef)headerWSUpgradeName,
                                      (__bridge CFStringRef)headerWSUpgradeValue);
@@ -166,7 +171,7 @@ static int BUFFER_MAX = 2048;
                                      (__bridge CFStringRef)headerWSConnectionValue);
     CFHTTPMessageSetHeaderFieldValue(urlRequest,
                                      (__bridge CFStringRef)headerWSProtocolName,
-                                     (__bridge CFStringRef)headerWSProtocolValue);
+                                     (__bridge CFStringRef)protocols);
     CFHTTPMessageSetHeaderFieldValue(urlRequest,
                                      (__bridge CFStringRef)headerWSVersionName,
                                      (__bridge CFStringRef)headerWSVersionValue);
@@ -178,7 +183,7 @@ static int BUFFER_MAX = 2048;
                                      (__bridge CFStringRef)self.url.absoluteString);
     CFHTTPMessageSetHeaderFieldValue(urlRequest,
                                      (__bridge CFStringRef)headerWSHostName,
-                                     (__bridge CFStringRef)[NSString stringWithFormat:@"%@:%@",self.url.host,self.url.port]);
+                                     (__bridge CFStringRef)[NSString stringWithFormat:@"%@:%@",self.url.host,port]);
     
     for(NSString *key in self.headers) {
         CFHTTPMessageSetHeaderFieldValue(urlRequest,
@@ -215,6 +220,10 @@ static int BUFFER_MAX = 2048;
     if([self.url.scheme isEqualToString:@"wss"] || [self.url.scheme isEqualToString:@"https"]) {
         [self.inputStream setProperty:NSStreamSocketSecurityLevelNegotiatedSSL forKey:NSStreamSocketSecurityLevelKey];
         [self.outputStream setProperty:NSStreamSocketSecurityLevelNegotiatedSSL forKey:NSStreamSocketSecurityLevelKey];
+    }
+    if(self.voipEnabled) {
+        [self.inputStream setProperty:NSStreamNetworkServiceTypeVoIP forKey:NSStreamNetworkServiceType];
+        [self.outputStream setProperty:NSStreamNetworkServiceTypeVoIP forKey:NSStreamNetworkServiceType];
     }
     [self.inputStream scheduleInRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
     [self.outputStream scheduleInRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
@@ -272,7 +281,7 @@ static int BUFFER_MAX = 2048;
     self.outputStream = nil;
     self.inputStream = nil;
     self.isRunLoop = NO;
-    self.isConnected = NO;
+    _isConnected = NO;
     
     if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)]) {
         dispatch_async(dispatch_get_main_queue(),^{
@@ -292,7 +301,7 @@ static int BUFFER_MAX = 2048;
         NSInteger length = [self.inputStream read:buffer maxLength:BUFFER_MAX];
         if(length > 0) {
             if(!self.isConnected) {
-                self.isConnected = [self processHTTP:buffer length:length];
+                _isConnected = [self processHTTP:buffer length:length];
                 if(!self.isConnected) {
                     if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)])
                         [self.delegate websocketDidDisconnect:self error:[self errorWithDetail:@"Invalid HTTP upgrade" code:1]];

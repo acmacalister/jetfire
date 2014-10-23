@@ -12,7 +12,7 @@ jetfire also has a Swift counter part here: [starscream](https://github.com/dalt
 Open a connection to your websocket server. self.socket is a property, so it can stick around.
 
 ```objc
-self.socket = [[JFWebSocket alloc] initWithURL:[NSURL URLWithString:@"ws://localhost:8080"]];
+self.socket = [[JFWebSocket alloc] initWithURL:[NSURL URLWithString:@"ws://localhost:8080"] protocols:@[@"chat",@"superchat"]];
 self.socket.delegate = self;
 [self.socket connect];
 ```
@@ -62,6 +62,26 @@ Disconnect.
 {
 	[self.socket disconnect];
 }
+```
+
+### isConnected
+
+Returns if the socket is connected or not.
+
+```objc
+if(self.socket.isConnected) {
+  // do cool stuff.
+}
+```
+
+### Custom Headers
+
+You can also override the default websocket headers with your own custom ones like so:
+
+```objc
+[socket setHeader:@"Sec-WebSocket-Protocol" forKey:@"someother protocols"];
+[socket setHeader:@"Sec-WebSocket-Version" forKey:@"14"];
+[socket setHeader:@"My-Awesome-Header" forKey:@"Everything is Awesome!"];
 ```
 
 

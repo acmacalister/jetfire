@@ -62,9 +62,10 @@
 /**
  constructor to create a new websocket.
  @param: url is the host you want to connect to.
+ @param: protocols are the websocket protocols you want to use (e.g. chat,superchat).
  @return a newly initalized websocket.
  */
-- (instancetype)initWithURL:(NSURL *)url;
+- (instancetype)initWithURL:(NSURL *)url protocols:(NSArray*)protocols;
 
 /**
  connect to the host.
@@ -89,10 +90,21 @@
 - (void)writeString:(NSString*)string;
 
 /**
+ returns if the socket is conneted or not.
+ */
+@property(nonatomic, assign, readonly)BOOL isConnected;
+
+/**
  Add a header to send along on the the HTTP connect.
  @param: value is the string to send
  @param: key is the HTTP key name to send
  */
 - (void)addHeader:(NSString*)value forKey:(NSString*)key;
+
+/**
+ Enable VOIP support on the socket, so it can be used in the background for VOIP calls.
+ Default settings is NO.
+ */
+@property(nonatomic, assign)BOOL voipEnabled;
 
 @end
