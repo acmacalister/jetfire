@@ -1,6 +1,6 @@
 /////////////////////////////////////////////////////////////////////////////
 //
-//  JFWebSocket.h
+//  JFRWebSocket.h
 //
 //  Created by Austin and Dalton Cherry on 5/13/14.
 //  Copyright (c) 2014 Vluxe. All rights reserved.
@@ -9,41 +9,41 @@
 
 #import <Foundation/Foundation.h>
 
-@class JFWebSocket;
+@class JFRWebSocket;
 
 /**
  It is important to note that all the delegate methods are put back on the main thread.
  This means if you want to do some major process of the data, you need to create a background thread.
  */
-@protocol JFWebSocketDelegate <NSObject>
+@protocol JFRWebSocketDelegate <NSObject>
 
 @optional
 /**
  The websocket connected to its host.
  @param socket is the current socket object.
  */
--(void)websocketDidConnect:(JFWebSocket*)socket;
+-(void)websocketDidConnect:(JFRWebSocket*)socket;
 
 /**
  The websocket was disconnected from its host.
  @param socket is the current socket object.
  @param error is return an error occured to trigger the disconnect.
  */
--(void)websocketDidDisconnect:(JFWebSocket*)socket error:(NSError*)error;
+-(void)websocketDidDisconnect:(JFRWebSocket*)socket error:(NSError*)error;
 
 /**
  The websocket got a text based message.
  @param socket is the current socket object.
  @param string is the text based data that has been returned.
  */
--(void)websocket:(JFWebSocket*)socket didReceiveMessage:(NSString*)string;
+-(void)websocket:(JFRWebSocket*)socket didReceiveMessage:(NSString*)string;
 
 /**
  The websocket got a binary based message.
  @param socket is the current socket object.
  @param data is the binary based data that has been returned.
  */
--(void)websocket:(JFWebSocket*)socket didReceiveData:(NSData*)data;
+-(void)websocket:(JFRWebSocket*)socket didReceiveData:(NSData*)data;
 
 
 /**
@@ -51,13 +51,13 @@
  @param socket is the current socket object.
  @param error is an error that occured when writing.
  */
--(void)websocketDidWriteError:(JFWebSocket*)socket error:(NSError*)error;
+-(void)websocketDidWriteError:(JFRWebSocket*)socket error:(NSError*)error;
 
 @end
 
-@interface JFWebSocket : NSObject
+@interface JFRWebSocket : NSObject
 
-@property(nonatomic,weak)id<JFWebSocketDelegate>delegate;
+@property(nonatomic,weak)id<JFRWebSocketDelegate>delegate;
 
 /**
  constructor to create a new websocket.
