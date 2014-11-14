@@ -12,7 +12,7 @@ jetfire also has a Swift counter part here: [starscream](https://github.com/dalt
 Open a connection to your websocket server. self.socket is a property, so it can stick around.
 
 ```objc
-self.socket = [[JFWebSocket alloc] initWithURL:[NSURL URLWithString:@"ws://localhost:8080"] protocols:@[@"chat",@"superchat"]];
+self.socket = [[JFRWebSocket alloc] initWithURL:[NSURL URLWithString:@"ws://localhost:8080"] protocols:@[@"chat",@"superchat"]];
 self.socket.delegate = self;
 [self.socket connect];
 ```
@@ -21,17 +21,17 @@ Now for the delegate methods.
 
 ```objc
 /////////////////////////////////////////////////////////////////////////////
--(void)websocketDidConnect:(JFWebSocket*)socket
+-(void)websocketDidConnect:(JFRWebSocket*)socket
 {
     NSLog(@"websocket is connected");
 }
 /////////////////////////////////////////////////////////////////////////////
--(void)websocketDidDisconnect:(JFWebSocket*)socket error:(NSError*)error
+-(void)websocketDidDisconnect:(JFRWebSocket*)socket error:(NSError*)error
 {
     NSLog(@"websocket is disconnected: %@",[error localizedDescription]);
 }
 /////////////////////////////////////////////////////////////////////////////
--(void)websocket:(JFWebSocket*)socket didReceiveMessage:(NSString*)string
+-(void)websocket:(JFRWebSocket*)socket didReceiveMessage:(NSString*)string
 {
     NSLog(@"got some text: %@",string);
     dispatch_async(dispatch_get_main_queue(),^{
@@ -39,7 +39,7 @@ Now for the delegate methods.
     });
 }
 /////////////////////////////////////////////////////////////////////////////
--(void)websocket:(JFWebSocket*)socket didReceiveData:(NSData*)data
+-(void)websocket:(JFRWebSocket*)socket didReceiveData:(NSData*)data
 {
     NSLog(@"got some binary data: %d",data.length);
 }
