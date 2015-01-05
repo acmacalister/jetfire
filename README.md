@@ -93,6 +93,9 @@ The recommended approach for installing jetfire is via the CocoaPods package man
 
 jetfire requires at least iOS 5/OSX 10.7 or above.
 
+## Dependencies ##
+- Security.framework
+- CFNetwork.framework
 
 ## License ##
 
