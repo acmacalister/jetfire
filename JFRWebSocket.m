@@ -150,6 +150,7 @@ static int BUFFER_MAX = 2048;
                                                              requestMethod,
                                                              url,
                                                              kCFHTTPVersion1_1);
+    CFRelease(url);
     
     NSNumber *port = _url.port;
     if (!port) {
@@ -191,8 +192,9 @@ static int BUFFER_MAX = 2048;
                                          (__bridge CFStringRef)self.headers[key]);
     }
     
-    NSData *serializedRequest = (__bridge NSData *)(CFHTTPMessageCopySerializedMessage(urlRequest));
+    NSData *serializedRequest = (__bridge_transfer NSData *)(CFHTTPMessageCopySerializedMessage(urlRequest));
     [self initStreamsWithData:serializedRequest port:port];
+    CFRelease(urlRequest);
 }
 /////////////////////////////////////////////////////////////////////////////
 //Random String of 16 lowercase chars, SHA1 and base64 encoded.
@@ -378,11 +380,13 @@ static int BUFFER_MAX = 2048;
 {
     CFHTTPMessageRef response = CFHTTPMessageCreateEmpty(kCFAllocatorDefault, NO);
     CFHTTPMessageAppendBytes(response, buffer, bufferLen);
-    if(CFHTTPMessageGetResponseStatusCode(response) != 101)
+    if(CFHTTPMessageGetResponseStatusCode(response) != 101) {
+        CFRelease(response);
         return NO;
-    NSDictionary *headers = (__bridge NSDictionary *)(CFHTTPMessageCopyAllHeaderFields(response));
+    }
+    NSDictionary *headers = (__bridge_transfer NSDictionary *)(CFHTTPMessageCopyAllHeaderFields(response));
     NSString *acceptKey = headers[headerWSAcceptName];
-    
+    CFRelease(response);
     if(acceptKey.length > 0)
         return YES;
     return NO;
