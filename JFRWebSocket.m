@@ -467,6 +467,8 @@ static int BUFFER_MAX = 2048;
                 }
             }
             [self writeError:code];
+            if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)])
+                [self.delegate websocketDidDisconnect:self error:[self errorWithDetail:@"continue frame before a binary or text frame" code:code]];
             return;
         }
         if(isControlFrame && payloadLen > 125) {
@@ -654,9 +656,8 @@ static int BUFFER_MAX = 2048;
                 break;
             }
             NSInteger len = [self.outputStream write:([frame bytes]+total) maxLength:(NSInteger)(offset-total)];
-            if(len < 0) {
-                if([self.delegate respondsToSelector:@selector(websocketDidWriteError:error:)])
-                    [self.delegate websocketDidWriteError:self error:[self.outputStream streamError]];
+            if(len < 0 || len == NSNotFound) {
+                [self doWriteError];
                 break;
             } else {
                 total += len;
@@ -666,6 +667,17 @@ static int BUFFER_MAX = 2048;
             }
         }
     }];
+}
+/////////////////////////////////////////////////////////////////////////////
+-(void)doWriteError
+{
+    if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)]) {
+        NSError *error = [self.outputStream streamError];
+        if(!error) {
+            error = [self errorWithDetail:@"output stream error during write" code:2];
+        }
+        [self.delegate websocketDidDisconnect:self error:[self.outputStream streamError]];
+    }
 }
 /////////////////////////////////////////////////////////////////////////////
 -(NSError*)errorWithDetail:(NSString*)detail code:(NSInteger)code
