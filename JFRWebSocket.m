@@ -231,7 +231,11 @@ static int BUFFER_MAX = 2048;
     [self.outputStream scheduleInRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
     [self.inputStream open];
     [self.outputStream open];
-    [self.outputStream write:[data bytes] maxLength:[data length]];
+    NSInteger len = [self.outputStream write:[data bytes] maxLength:[data length]];
+    if(len < 0 || len == NSNotFound) {
+        [self doWriteError];
+        return;
+    }
     self.isRunLoop = YES;
     while (self.isRunLoop)
         [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate distantFuture]];
