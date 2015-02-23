@@ -231,7 +231,11 @@ static int BUFFER_MAX = 2048;
     [self.outputStream scheduleInRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
     [self.inputStream open];
     [self.outputStream open];
-    [self.outputStream write:[data bytes] maxLength:[data length]];
+    NSInteger len = [self.outputStream write:[data bytes] maxLength:[data length]];
+    if(len < 0 || len == NSNotFound) {
+        [self doWriteError];
+        return;
+    }
     self.isRunLoop = YES;
     while (self.isRunLoop)
         [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate distantFuture]];
@@ -671,13 +675,11 @@ static int BUFFER_MAX = 2048;
 /////////////////////////////////////////////////////////////////////////////
 -(void)doWriteError
 {
-    if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)]) {
-        NSError *error = [self.outputStream streamError];
-        if(!error) {
-            error = [self errorWithDetail:@"output stream error during write" code:2];
-        }
-        [self.delegate websocketDidDisconnect:self error:[self.outputStream streamError]];
+    NSError *error = [self.outputStream streamError];
+    if(!error) {
+        error = [self errorWithDetail:@"output stream error during write" code:2];
     }
+    [self disconnectStream:error];
 }
 /////////////////////////////////////////////////////////////////////////////
 -(NSError*)errorWithDetail:(NSString*)detail code:(NSInteger)code
