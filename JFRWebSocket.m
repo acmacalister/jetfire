@@ -675,13 +675,11 @@ static int BUFFER_MAX = 2048;
 /////////////////////////////////////////////////////////////////////////////
 -(void)doWriteError
 {
-    if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)]) {
-        NSError *error = [self.outputStream streamError];
-        if(!error) {
-            error = [self errorWithDetail:@"output stream error during write" code:2];
-        }
-        [self.delegate websocketDidDisconnect:self error:[self.outputStream streamError]];
+    NSError *error = [self.outputStream streamError];
+    if(!error) {
+        error = [self errorWithDetail:@"output stream error during write" code:2];
     }
+    [self disconnectStream:error];
 }
 /////////////////////////////////////////////////////////////////////////////
 -(NSError*)errorWithDetail:(NSString*)detail code:(NSInteger)code
