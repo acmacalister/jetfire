@@ -94,6 +94,7 @@ static int BUFFER_MAX = 2048;
     if(self = [super init]) {
         self.voipEnabled = NO;
         self.selfSignedSSL = NO;
+        self.queue = dispatch_get_main_queue();
         self.url = url;
         self.readStack = [NSMutableArray new];
         self.inputQueue = [NSMutableArray new];
@@ -300,7 +301,7 @@ static int BUFFER_MAX = 2048;
     _isConnected = NO;
     
     if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)]) {
-        dispatch_async(dispatch_get_main_queue(),^{
+        dispatch_async(self.queue,^{
             [self.delegate websocketDidDisconnect:self error:error];
         });
     }
@@ -374,7 +375,7 @@ static int BUFFER_MAX = 2048;
         if([self validateResponse:buffer length:totalSize])
         {
             if([self.delegate respondsToSelector:@selector(websocketDidConnect:)]) {
-                dispatch_async(dispatch_get_main_queue(),^{
+                dispatch_async(self.queue,^{
                     [self.delegate websocketDidConnect:self];
                 });
             }
@@ -588,12 +589,12 @@ static int BUFFER_MAX = 2048;
                 return NO;
             }
             if([self.delegate respondsToSelector:@selector(websocket:didReceiveMessage:)]) {
-                dispatch_async(dispatch_get_main_queue(),^{
+                dispatch_async(self.queue,^{
                     [self.delegate websocket:self didReceiveMessage:str];
                 });
             }
         } else if([self.delegate respondsToSelector:@selector(websocket:didReceiveData:)]) {
-            dispatch_async(dispatch_get_main_queue(),^{
+            dispatch_async(self.queue,^{
                 [self.delegate websocket:self didReceiveData:data];
             });
         }

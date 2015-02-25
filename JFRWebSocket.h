@@ -103,6 +103,12 @@
  Allows connection to self signed or untrusted WebSocket connection. Useful for development.
  Default setting is No.
  */
- @property(nonatomic, assign)BOOL selfSignedSSL;
+@property(nonatomic, assign)BOOL selfSignedSSL;
+
+/**
+ Set your own custom queue.
+ Default setting is dispatch_get_main_queue.
+ */
+@property(nonatomic, strong)dispatch_queue_t queue;
 
 @end

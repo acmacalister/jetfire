@@ -135,7 +135,12 @@ self.socket.selfSignedSSL = YES;
 
 ### Custom Queue
 
-need to add...
+A custom queue can be specified when delegate methods are called. By default `dispatch_get_main_queue` is used, thus making all delegate methods calls run on the main thread. It is important to note that all WebSocket processing is done on a background thread, only the delegate method calls are changed when modifying the queue. The actual processing is always on a background thread and will not pause your app.
+
+```objc
+//create a custom queue
+self.socket.queue = dispatch_queue_create("com.vluxe.jetfire.myapp", nil);
+```
 
 ## Example Project
 
