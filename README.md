@@ -1,15 +1,29 @@
-jetfire
+Jetfire
 =======
 
 WebSocket [RFC 6455](http://tools.ietf.org/html/rfc6455) client library for iOS and OSX.
 
-Jetfire conforms to all of the base [Autobahn test suite](http://autobahn.ws/testsuite/). The library is very simple and only a few hundred lines of code, but fully featured. It runs completely on a background thread, so processing will never block the main thread. 
+Jetfire is a conforming WebSocket ([RFC 6455](http://tools.ietf.org/html/rfc6455)) client library in Objective-C for iOS and OSX.
 
-jetfire also has a Swift counter part here: [starscream](https://github.com/daltoniam/starscream)
+Jetfire also has a Swift counter part here: [Starscream](https://github.com/daltoniam/starscream)
+
+## Features
+
+- Conforms to all of the base [Autobahn test suite](http://autobahn.ws/testsuite/).
+- Nonblocking. Everything happens in the background, thanks to GCD.
+- Simple delegate pattern design.
+- TLS/WSS support.
+- Simple concise codebase at just a few hundred LOC.
 
 ## Example ##
 
-Open a connection to your websocket server. self.socket is a property, so it can stick around.
+First thing is to import the header file. See the Installation instructions on how to add Jetfire to your project.
+
+```objc
+#import "JFRWebSocket.h"
+```
+
+Once imported, you can open a connection to your WebSocket server. Note that `socket` is probably best as a property, so your delegate can stick around.
 
 ```objc
 self.socket = [[JFRWebSocket alloc] initWithURL:[NSURL URLWithString:@"ws://localhost:8080"] protocols:@[@"chat",@"superchat"]];
@@ -17,51 +31,63 @@ self.socket.delegate = self;
 [self.socket connect];
 ```
 
-Now for the delegate methods.
+After you are connected, there are some delegate methods that we need to implement.
+
+### websocketDidConnect
 
 ```objc
-/////////////////////////////////////////////////////////////////////////////
--(void)websocketDidConnect:(JFRWebSocket*)socket
-{
+-(void)websocketDidConnect:(JFRWebSocket*)socket {
     NSLog(@"websocket is connected");
 }
-/////////////////////////////////////////////////////////////////////////////
--(void)websocketDidDisconnect:(JFRWebSocket*)socket error:(NSError*)error
-{
+```
+
+### websocketDidDisconnect
+
+```objc
+-(void)websocketDidDisconnect:(JFRWebSocket*)socket error:(NSError*)error {
     NSLog(@"websocket is disconnected: %@",[error localizedDescription]);
 }
-/////////////////////////////////////////////////////////////////////////////
--(void)websocket:(JFRWebSocket*)socket didReceiveMessage:(NSString*)string
-{
+```
+
+### websocketDidReceiveMessage
+
+```objc
+-(void)websocket:(JFRWebSocket*)socket didReceiveMessage:(NSString*)string {
     NSLog(@"got some text: %@",string);
     dispatch_async(dispatch_get_main_queue(),^{
 	//do some UI work
     });
 }
-/////////////////////////////////////////////////////////////////////////////
--(void)websocket:(JFRWebSocket*)socket didReceiveData:(NSData*)data
-{
+```
+
+### websocketDidReceiveData
+
+```objc
+-(void)websocket:(JFRWebSocket*)socket didReceiveData:(NSData*)data {
     NSLog(@"got some binary data: %d",data.length);
 }
 ```
 
-How to send a message.
+The delegate methods give you a simple way to handle data from the server, but how do you send data?
+
+### writeData
 
 ```objc
--(void)sendMessage
-{
-	[self.socket writeString:@"hello server!"];
-	//[self.socket writeData:[NSData data]]; you can also write binary data like so
-}
+[self.socket writeData:[NSData data]]; // write some NSData over the socket!
 ```
 
-Disconnect.
+### writeString
+
+The writeString method is the same as writeData, but sends text/string.
 
 ```objc
--(void)disconnect
-{
-	[self.socket disconnect];
-}
+[self.socket writeString:@"Hi Server!"]; //example on how to write text over the socket!
+```
+
+### disconnect
+
+```objc
+[self.socket disconnect];
 ```
 
 ### isConnected
@@ -79,27 +105,62 @@ if(self.socket.isConnected) {
 You can also override the default websocket headers with your own custom ones like so:
 
 ```objc
-[socket setHeader:@"Sec-WebSocket-Protocol" forKey:@"someother protocols"];
-[socket setHeader:@"Sec-WebSocket-Version" forKey:@"14"];
-[socket setHeader:@"My-Awesome-Header" forKey:@"Everything is Awesome!"];
+[self.socket setHeader:@"Sec-WebSocket-Protocol" forKey:@"someother protocols"];
+[self.socket setHeader:@"Sec-WebSocket-Version" forKey:@"14"];
+[self.socket setHeader:@"My-Awesome-Header" forKey:@"Everything is Awesome!"];
 ```
 
+### Protocols
+
+If you need to specify a protocol, simple add it to the init:
+
+```objc
+//chat and superchat are the example protocols here
+self.socket = [[JFRWebSocket alloc] initWithURL:[NSURL URLWithString:@"ws://localhost:8080"] protocols:@[@"chat",@"superchat"]];
+self.socket.delegate = self;
+[self.socket connect];
+```
+
+### Self Signed SSL and VOIP
+
+There are a couple of other properties that modify the stream:
+
+```objc
+//set this if you are planning on using the socket in a VOIP background setting (using the background VOIP service).
+self.socket.voipEnabled = YES;
+
+//set this you want to ignore SSL cert validation, so a self signed SSL certificate can be used.
+self.socket.selfSignedSSL = YES;
+```
+
+### Custom Queue
+
+need to add...
+
+## Example Project
+
+Check out the SimpleTest project in the examples directory to see how to setup a simple connection to a WebSocket server.
 
 ## Install ##
 
-The recommended approach for installing jetfire is via the CocoaPods package manager (like most libraries). 
+The recommended approach for installing Jetfire is via the CocoaPods package manager (like most libraries).
 
 ## Requirements ##
 
-jetfire requires at least iOS 5/OSX 10.7 or above.
+Jetfire requires at least iOS 5/OSX 10.7 or above.
 
 ## Dependencies ##
 - Security.framework
 - CFNetwork.framework
 
+## TODOs
+
+- [ ] Complete Docs
+- [ ] Add Unit Tests
+
 ## License ##
 
-jetfire is license under the Apache License.
+Jetfire is license under the Apache License.
 
 ## Contact ##
 

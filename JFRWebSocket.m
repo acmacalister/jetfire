@@ -93,6 +93,7 @@ static int BUFFER_MAX = 2048;
 {
     if(self = [super init]) {
         self.voipEnabled = NO;
+        self.selfSignedSSL = NO;
         self.url = url;
         self.readStack = [NSMutableArray new];
         self.inputQueue = [NSMutableArray new];
@@ -226,6 +227,15 @@ static int BUFFER_MAX = 2048;
     if(self.voipEnabled) {
         [self.inputStream setProperty:NSStreamNetworkServiceTypeVoIP forKey:NSStreamNetworkServiceType];
         [self.outputStream setProperty:NSStreamNetworkServiceTypeVoIP forKey:NSStreamNetworkServiceType];
+    }
+    if(self.selfSignedSSL) {
+        NSString *chain = (__bridge_transfer NSString *)kCFStreamSSLValidatesCertificateChain;
+        NSString *peerName = (__bridge_transfer NSString *)kCFStreamSSLValidatesCertificateChain;
+        NSString *key = (__bridge_transfer NSString *)kCFStreamPropertySSLSettings;
+        NSDictionary *settings = @{chain: [[NSNumber alloc] initWithBool:NO],
+                                   peerName: [NSNull null]};
+        [self.inputStream setProperty:settings forKey:key];
+        [self.outputStream setProperty:settings forKey:key];
     }
     [self.inputStream scheduleInRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
     [self.outputStream scheduleInRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];

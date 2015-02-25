@@ -82,11 +82,6 @@
 - (void)writeString:(NSString*)string;
 
 /**
- returns if the socket is conneted or not.
- */
-@property(nonatomic, assign, readonly)BOOL isConnected;
-
-/**
  Add a header to send along on the the HTTP connect.
  @param: value is the string to send
  @param: key is the HTTP key name to send
@@ -94,9 +89,20 @@
 - (void)addHeader:(NSString*)value forKey:(NSString*)key;
 
 /**
+ returns if the socket is conneted or not.
+ */
+@property(nonatomic, assign, readonly)BOOL isConnected;
+
+/**
  Enable VOIP support on the socket, so it can be used in the background for VOIP calls.
- Default settings is NO.
+ Default setting is No.
  */
 @property(nonatomic, assign)BOOL voipEnabled;
+
+/**
+ Allows connection to self signed or untrusted WebSocket connection. Useful for development.
+ Default setting is No.
+ */
+ @property(nonatomic, assign)BOOL selfSignedSSL;
 
 @end
