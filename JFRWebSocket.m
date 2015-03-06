@@ -107,6 +107,10 @@ static int BUFFER_MAX = 2048;
 //Exposed method for connecting to URL provided in init method.
 - (void)connect
 {
+    if(_isConnected) {
+        return;
+    }
+    
     //everything is on a background thread.
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         [self createHTTPRequest];
