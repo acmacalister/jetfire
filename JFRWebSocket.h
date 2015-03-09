@@ -45,6 +45,12 @@
  */
 -(void)websocket:(JFRWebSocket*)socket didReceiveData:(NSData*)data;
 
+/**
+ Write to server has been completed.
+ @param socket is the current socket object.
+ */
+-(void)websocketDidWriteSuccessfully:(JFRWebSocket*)socket;
+
 @end
 
 @interface JFRWebSocket : NSObject

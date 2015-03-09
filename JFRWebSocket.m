@@ -294,7 +294,9 @@ static int BUFFER_MAX = 2048;
 /////////////////////////////////////////////////////////////////////////////
 -(void)disconnectStream:(NSError*)error
 {
-    [self.writeQueue waitUntilAllOperationsAreFinished];
+
+    
+    //[self.writeQueue waitUntilAllOperationsAreFinished];
     [self.inputStream removeFromRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
     [self.outputStream removeFromRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
     [self.outputStream close];
@@ -309,6 +311,8 @@ static int BUFFER_MAX = 2048;
             [self.delegate websocketDidDisconnect:self error:error];
         });
     }
+    
+
 }
 /////////////////////////////////////////////////////////////////////////////
 
@@ -682,10 +686,20 @@ static int BUFFER_MAX = 2048;
                 total += len;
             }
             if(total >= offset) {
+                [self doWriteSuccessfully];
                 break;
             }
         }
     }];
+}
+/////////////////////////////////////////////////////////////////////////////
+-(void)doWriteSuccessfully
+{
+    if([self.delegate respondsToSelector:@selector(websocketDidWriteSuccessfully:)]) {
+        dispatch_async(self.queue,^{
+            [self.delegate websocketDidWriteSuccessfully:self];
+        });
+    }
 }
 /////////////////////////////////////////////////////////////////////////////
 -(void)doWriteError
