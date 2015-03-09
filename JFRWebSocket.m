@@ -296,7 +296,7 @@ static int BUFFER_MAX = 2048;
 {
 
     
-    //[self.writeQueue waitUntilAllOperationsAreFinished];
+    [self.writeQueue cancelAllOperations];
     [self.inputStream removeFromRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
     [self.outputStream removeFromRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
     [self.outputStream close];
