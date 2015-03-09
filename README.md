@@ -68,6 +68,16 @@ After you are connected, there are some delegate methods that we need to impleme
 }
 ```
 
+### websocketDidReceiveData
+
+```objc
+-(void)websocketDidWriteSuccessfully:(JFRWebSocket*)socket {
+    NSLog(@"Data has been delivery to server");
+}
+```
+
+
+
 The delegate methods give you a simple way to handle data from the server, but how do you send data?
 
 ### writeData
