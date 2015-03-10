@@ -65,6 +65,7 @@ typedef NS_ENUM(NSUInteger, JFRCloseCode) {
 @property(nonatomic, strong)NSData *fragBuffer;
 @property(nonatomic, strong)NSMutableDictionary *headers;
 @property(nonatomic, strong)NSArray *optProtocols;
+@property(nonatomic, assign)BOOL isCreated;
 
 @end
 
@@ -107,13 +108,15 @@ static int BUFFER_MAX = 2048;
 //Exposed method for connecting to URL provided in init method.
 - (void)connect
 {
-    if(_isConnected) {
+    if(self.isCreated) {
         return;
     }
     
     //everything is on a background thread.
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        self.isCreated = YES;
         [self createHTTPRequest];
+        self.isCreated = NO;
     });
 }
 /////////////////////////////////////////////////////////////////////////////
