@@ -100,6 +100,7 @@ static int BUFFER_MAX = 2048;
 - (instancetype)initWithURL:(NSURL *)url protocols:(NSArray*)protocols
 {
     if(self = [super init]) {
+        [JFRThread sharedLoop]; //create the background thread and run loop
         self.voipEnabled = NO;
         self.selfSignedSSL = NO;
         self.queue = dispatch_get_main_queue();
@@ -253,11 +254,12 @@ static int BUFFER_MAX = 2048;
     [self.outputStream scheduleInRunLoop:[JFRThread sharedLoop] forMode:NSDefaultRunLoopMode];
     [self.inputStream open];
     [self.outputStream open];
-    NSInteger len = [self.outputStream write:[data bytes] maxLength:[data length]];
-    if(len < 0 || len == NSNotFound) {
-        [self doWriteError];
-        return;
-    }
+    [self dequeueWithBlock:^{
+        NSInteger len = [self.outputStream write:[data bytes] maxLength:[data length]];
+        if(len < 0 || len == NSNotFound) {
+            [self doWriteError];
+        }
+    }];
 }
 /////////////////////////////////////////////////////////////////////////////
 
@@ -621,15 +623,19 @@ static int BUFFER_MAX = 2048;
     return NO;
 }
 /////////////////////////////////////////////////////////////////////////////
--(void)dequeueWrite:(NSData*)data withCode:(JFROpCode)code
-{
+-(void)dequeueWithBlock:(void (^)(void))block {
     if(!self.writeQueue) {
         self.writeQueue = [[NSOperationQueue alloc] init];
         self.writeQueue.maxConcurrentOperationCount = 1;
     }
+    [self.writeQueue addOperationWithBlock:block];
+}
+/////////////////////////////////////////////////////////////////////////////
+-(void)dequeueWrite:(NSData*)data withCode:(JFROpCode)code
+{
     //we have a queue so we can be thread safe.
     //need to change to custom NSOperations to store code and data pending to be written
-    [self.writeQueue addOperationWithBlock:^{
+    [self dequeueWithBlock:^{
         //stream isn't ready, let's wait
         int tries = 0;
         while(!self.outputStream || !self.isConnected) {
@@ -745,13 +751,13 @@ static int BUFFER_MAX = 2048;
 -(instancetype)init {
     if(self = [super init]) {
         self.isRunning = YES;
-        self.loop = [NSRunLoop currentRunLoop];
         [self start];
     }
     return self;
 }
 /////////////////////////////////////////////////////////////////////////////
 -(void)main {
+    self.loop = [NSRunLoop currentRunLoop];
     while (self.isRunning)
         [self.loop runMode:NSDefaultRunLoopMode beforeDate:[NSDate distantFuture]];
 }
