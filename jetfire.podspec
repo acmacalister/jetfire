@@ -9,6 +9,11 @@ Pod::Spec.new do |s|
   s.source       = { :git => "https://github.com/acmacalister/jetfire.git", :tag => "#{s.version}" }
   s.ios.deployment_target = '6.0'
   s.osx.deployment_target = '10.7'
-  s.source_files = '*.{h,m}'
+  s.source_files = 'JFRWebSocket.{h,m}'
   s.requires_arc = true
+
+  s.subspec 'Core' do |ss|
+    ss.source_files = 'Private/*.{h,m}'
+  end
+  s.default_subspec = 'Core'
 end

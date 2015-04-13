@@ -8,50 +8,8 @@
 /////////////////////////////////////////////////////////////////////////////
 
 #import "JFRWebSocket.h"
+#import "JFRResponse.h"
 
-//this get the correct bits out by masking the bytes of the buffer.
-static const uint8_t JFRFinMask             = 0x80;
-static const uint8_t JFROpCodeMask          = 0x0F;
-static const uint8_t JFRRSVMask             = 0x70;
-static const uint8_t JFRMaskMask            = 0x80;
-static const uint8_t JFRPayloadLenMask      = 0x7F;
-static const size_t  JFRMaxFrameSize        = 32;
-
-//get the opCode from the packet
-typedef NS_ENUM(NSUInteger, JFROpCode) {
-    JFROpCodeContinueFrame = 0x0,
-    JFROpCodeTextFrame = 0x1,
-    JFROpCodeBinaryFrame = 0x2,
-    //3-7 are reserved.
-    JFROpCodeConnectionClose = 0x8,
-    JFROpCodePing = 0x9,
-    JFROpCodePong = 0xA,
-    //B-F reserved.
-};
-
-typedef NS_ENUM(NSUInteger, JFRCloseCode) {
-    JFRCloseCodeNormal                 = 1000,
-    JFRCloseCodeGoingAway              = 1001,
-    JFRCloseCodeProtocolError          = 1002,
-    JFRCloseCodeProtocolUnhandledType  = 1003,
-    // 1004 reserved.
-    JFRCloseCodeNoStatusReceived       = 1005,
-    //1006 reserved.
-    JFRCloseCodeEncoding               = 1007,
-    JFRCloseCodePolicyViolated         = 1008,
-    JFRCloseCodeMessageTooBig          = 1009
-};
-
-//holds the responses in our read stack to properly process messages
-@interface JFRResponse : NSObject
-
-@property(nonatomic, assign)BOOL isFin;
-@property(nonatomic, assign)JFROpCode code;
-@property(nonatomic, assign)NSInteger bytesLeft;
-@property(nonatomic, assign)NSInteger frameCount;
-@property(nonatomic, strong)NSMutableData *buffer;
-
-@end
 
 @interface JFRWebSocket ()<NSStreamDelegate>
 
@@ -429,14 +387,14 @@ static int BUFFER_MAX = 2048;
         self.fragBuffer = [NSData dataWithBytes:buffer length:bufferLen];
         return;
     }
-    if(response.bytesLeft > 0) {
-        NSInteger len = response.bytesLeft;
-        NSInteger extra =  bufferLen - response.bytesLeft;
-        if(response.bytesLeft > bufferLen) {
+    if(response.bytesRemaining > 0) {
+        NSInteger len = response.bytesRemaining;
+        NSInteger extra =  bufferLen - response.bytesRemaining;
+        if(response.bytesRemaining > bufferLen) {
             len = bufferLen;
             extra = 0;
         }
-        response.bytesLeft -= len;
+        response.bytesRemaining -= len;
         [response.buffer appendData:[NSData dataWithBytes:buffer length:len]];
         [self processResponse:response];
         NSInteger offset = bufferLen - extra;
@@ -444,12 +402,12 @@ static int BUFFER_MAX = 2048;
             [self processExtra:(buffer+offset) length:extra];
         }
     } else {
-        BOOL isFin = (JFRFinMask & buffer[0]);
-        uint8_t receivedOpcode = (JFROpCodeMask & buffer[0]);
-        BOOL isMasked = (JFRMaskMask & buffer[1]);
-        uint8_t payloadLen = (JFRPayloadLenMask & buffer[1]);
+        BOOL isFin = (JFRResponseFinMask & buffer[0]);
+        uint8_t receivedOpcode = (JFRResponseOpCodeMask & buffer[0]);
+        BOOL isMasked = (JFRResponseMaskMask & buffer[1]);
+        uint8_t payloadLen = (JFRResponsePayloadLenMask & buffer[1]);
         NSInteger offset = 2; //how many bytes do we need to skip for the header
-        if((isMasked  || (JFRRSVMask & buffer[0])) && receivedOpcode != JFROpCodePong) {
+        if((isMasked  || (JFRResponseRSVMask & buffer[0])) && receivedOpcode != JFROpCodePong) {
             if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)]) {
                 [self.delegate websocketDidDisconnect:self error:[self errorWithDetail:@"masked and rsv data is not currently supported" code:JFRCloseCodeProtocolError]];
             }
@@ -551,12 +509,12 @@ static int BUFFER_MAX = 2048;
             }
             isNew = YES;
             response = [JFRResponse new];
-            response.code = receivedOpcode;
-            response.bytesLeft = dataLength;
+            response.opCode = receivedOpcode;
+            response.bytesRemaining = dataLength;
             response.buffer = [NSMutableData dataWithData:data];
         } else {
             if(receivedOpcode == JFROpCodeContinueFrame) {
-                response.bytesLeft = dataLength;
+                response.bytesRemaining = dataLength;
             } else {
                 if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)]) {
                     [self.delegate websocketDidDisconnect:self error:[self errorWithDetail:@"second and beyond of fragment message must be a continue frame" code:JFRCloseCodeProtocolError]];
@@ -566,9 +524,9 @@ static int BUFFER_MAX = 2048;
             }
             [response.buffer appendData:data];
         }
-        response.bytesLeft -= len;
+        response.bytesRemaining -= len;
         response.frameCount++;
-        response.isFin = isFin;
+        response.isFinished = isFin;
         if(isNew) {
             [self.readStack addObject:response];
         }
@@ -594,11 +552,11 @@ static int BUFFER_MAX = 2048;
 /////////////////////////////////////////////////////////////////////////////
 -(BOOL)processResponse:(JFRResponse*)response
 {
-    if(response.isFin && response.bytesLeft <= 0) {
+    if(response.isFinished && response.bytesRemaining <= 0) {
         NSData *data = response.buffer;
-        if(response.code == JFROpCodePing) {
+        if(response.opCode == JFROpCodePing) {
             [self dequeueWrite:response.buffer withCode:JFROpCodePong];
-        } else if(response.code == JFROpCodeTextFrame) {
+        } else if(response.opCode == JFROpCodeTextFrame) {
             NSString *str = [[NSString alloc] initWithData:response.buffer encoding:NSUTF8StringEncoding];
             if(!str) {
                 [self writeError:JFRCloseCodeEncoding];
@@ -629,7 +587,7 @@ static int BUFFER_MAX = 2048;
     return NO;
 }
 /////////////////////////////////////////////////////////////////////////////
--(void)dequeueWrite:(NSData*)data withCode:(JFROpCode)code
+-(void)dequeueWrite:(NSData*)data withCode:(JFRResponseOpCode)code
 {
     if(!self.writeQueue) {
         self.writeQueue = [[NSOperationQueue alloc] init];
@@ -650,9 +608,9 @@ static int BUFFER_MAX = 2048;
         uint64_t offset = 2; //how many bytes do we need to skip for the header
         uint8_t *bytes = (uint8_t*)[data bytes];
         uint64_t dataLength = data.length;
-        NSMutableData *frame = [[NSMutableData alloc] initWithLength:(NSInteger)(dataLength + JFRMaxFrameSize)];
+        NSMutableData *frame = [[NSMutableData alloc] initWithLength:(NSInteger)(dataLength + JFRResponseMaxFrameSize)];
         uint8_t *buffer = (uint8_t*)[frame mutableBytes];
-        buffer[0] = JFRFinMask | code;
+        buffer[0] = JFRResponseFinMask | code;
         if(dataLength < 126) {
             buffer[1] |= dataLength;
         } else if(dataLength <= UINT16_MAX) {
@@ -666,7 +624,7 @@ static int BUFFER_MAX = 2048;
         }
         BOOL isMask = YES;
         if(isMask) {
-            buffer[1] |= JFRMaskMask;
+            buffer[1] |= JFRResponseMaskMask;
             uint8_t *mask_key = (buffer + offset);
             SecRandomCopyBytes(kSecRandomDefault, sizeof(uint32_t), (uint8_t *)mask_key);
             offset += sizeof(uint32_t);
@@ -724,10 +682,3 @@ static int BUFFER_MAX = 2048;
 }
 /////////////////////////////////////////////////////////////////////////////
 @end
-
-/////////////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////
-@implementation JFRResponse
-
-@end
-/////////////////////////////////////////////////////////////////////////////
