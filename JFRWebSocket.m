@@ -77,17 +77,17 @@ typedef NS_ENUM(NSUInteger, JFRCloseCode) {
 @end
 
 //Constant Header Values.
-static const NSString *headerWSUpgradeName     = @"Upgrade";
-static const NSString *headerWSUpgradeValue    = @"websocket";
-static const NSString *headerWSHostName        = @"Host";
-static const NSString *headerWSConnectionName  = @"Connection";
-static const NSString *headerWSConnectionValue = @"Upgrade";
-static const NSString *headerWSProtocolName    = @"Sec-WebSocket-Protocol";
-static const NSString *headerWSVersionName     = @"Sec-Websocket-Version";
-static const NSString *headerWSVersionValue    = @"13";
-static const NSString *headerWSKeyName         = @"Sec-WebSocket-Key";
-static const NSString *headerOriginName        = @"Origin";
-static const NSString *headerWSAcceptName      = @"Sec-WebSocket-Accept";
+static NSString *const headerWSUpgradeName     = @"Upgrade";
+static NSString *const headerWSUpgradeValue    = @"websocket";
+static NSString *const headerWSHostName        = @"Host";
+static NSString *const headerWSConnectionName  = @"Connection";
+static NSString *const headerWSConnectionValue = @"Upgrade";
+static NSString *const headerWSProtocolName    = @"Sec-WebSocket-Protocol";
+static NSString *const headerWSVersionName     = @"Sec-Websocket-Version";
+static NSString *const headerWSVersionValue    = @"13";
+static NSString *const headerWSKeyName         = @"Sec-WebSocket-Key";
+static NSString *const headerOriginName        = @"Origin";
+static NSString *const headerWSAcceptName      = @"Sec-WebSocket-Accept";
 
 //Class Constants
 static char CRLFBytes[] = {'\r', '\n', '\r', '\n'};
@@ -271,28 +271,27 @@ static int BUFFER_MAX = 2048;
     switch (eventCode) {
         case NSStreamEventNone:
             break;
+            
         case NSStreamEventOpenCompleted:
             break;
+            
         case NSStreamEventHasBytesAvailable:
-        {
-            if(aStream == self.inputStream)
+            if(aStream == self.inputStream) {
                 [self processInputStream];
+            }
             break;
-        }
+            
         case NSStreamEventHasSpaceAvailable:
-        {
             break;
-        }
+            
         case NSStreamEventErrorOccurred:
-        {
             [self disconnectStream:[aStream streamError]];
             break;
-        }
+            
         case NSStreamEventEndEncountered:
-        {
             [self disconnectStream:nil];
             break;
-        }
+            
         default:
             break;
     }
@@ -412,8 +411,9 @@ static int BUFFER_MAX = 2048;
     NSDictionary *headers = (__bridge_transfer NSDictionary *)(CFHTTPMessageCopyAllHeaderFields(response));
     NSString *acceptKey = headers[headerWSAcceptName];
     CFRelease(response);
-    if(acceptKey.length > 0)
+    if(acceptKey.length > 0) {
         return YES;
+    }
     return NO;
 }
 /////////////////////////////////////////////////////////////////////////////
@@ -452,21 +452,24 @@ static int BUFFER_MAX = 2048;
         uint8_t payloadLen = (JFRPayloadLenMask & buffer[1]);
         NSInteger offset = 2; //how many bytes do we need to skip for the header
         if((isMasked  || (JFRRSVMask & buffer[0])) && receivedOpcode != JFROpCodePong) {
-            if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)])
+            if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)]) {
                 [self.delegate websocketDidDisconnect:self error:[self errorWithDetail:@"masked and rsv data is not currently supported" code:JFRCloseCodeProtocolError]];
+            }
             [self writeError:JFRCloseCodeProtocolError];
             return;
         }
         BOOL isControlFrame = (receivedOpcode == JFROpCodeConnectionClose || receivedOpcode == JFROpCodePing); //|| receivedOpcode == JFROpCodePong
         if(!isControlFrame && (receivedOpcode != JFROpCodeBinaryFrame && receivedOpcode != JFROpCodeContinueFrame && receivedOpcode != JFROpCodeTextFrame && receivedOpcode != JFROpCodePong)) {
-            if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)])
+            if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)]) {
                 [self.delegate websocketDidDisconnect:self error:[self errorWithDetail:[NSString stringWithFormat:@"unknown opcode: 0x%x",receivedOpcode] code:JFRCloseCodeProtocolError]];
+            }
             [self writeError:JFRCloseCodeProtocolError];
             return;
         }
         if(isControlFrame && !isFin) {
-            if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)])
+            if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)]) {
                 [self.delegate websocketDidDisconnect:self error:[self errorWithDetail:@"control frames can't be fragmented" code:JFRCloseCodeProtocolError]];
+            }
             [self writeError:JFRCloseCodeProtocolError];
             return;
         }
@@ -492,8 +495,9 @@ static int BUFFER_MAX = 2048;
                 }
             }
             [self writeError:code];
-            if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)])
+            if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)]) {
                 [self.delegate websocketDidDisconnect:self error:[self errorWithDetail:@"continue frame before a binary or text frame" code:code]];
+            }
             return;
         }
         if(isControlFrame && payloadLen > 125) {
@@ -509,8 +513,9 @@ static int BUFFER_MAX = 2048;
             offset += sizeof(uint16_t);
         }
         NSInteger len = dataLength;
-        if(dataLength > bufferLen)
+        if(dataLength > bufferLen) {
             len = bufferLen-offset;
+        }
         NSData *data = nil;
         if(len < 0) {
             len = 0;
@@ -531,16 +536,18 @@ static int BUFFER_MAX = 2048;
             response = nil; //don't append pings
         }
         if(!isFin && receivedOpcode == JFROpCodeContinueFrame && !response) {
-            if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)])
+            if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)]) {
                 [self.delegate websocketDidDisconnect:self error:[self errorWithDetail:@"continue frame before a binary or text frame" code:JFRCloseCodeProtocolError]];
+            }
             [self writeError:JFRCloseCodeProtocolError];
             return;
         }
         BOOL isNew = NO;
         if(!response) {
             if(receivedOpcode == JFROpCodeContinueFrame) {
-                if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)])
+                if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)]) {
                     [self.delegate websocketDidDisconnect:self error:[self errorWithDetail:@"first frame can't be a continue frame" code:JFRCloseCodeProtocolError]];
+                }
                 [self writeError:JFRCloseCodeProtocolError];
                 return;
             }
@@ -553,8 +560,9 @@ static int BUFFER_MAX = 2048;
             if(receivedOpcode == JFROpCodeContinueFrame) {
                 response.bytesLeft = dataLength;
             } else {
-                if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)])
+                if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)]) {
                     [self.delegate websocketDidDisconnect:self error:[self errorWithDetail:@"second and beyond of fragment message must be a continue frame" code:JFRCloseCodeProtocolError]];
+                }
                 [self writeError:JFRCloseCodeProtocolError];
                 return;
             }
@@ -635,6 +643,7 @@ static int BUFFER_MAX = 2048;
 {
     //we have a queue so we can be thread safe.
     //need to change to custom NSOperations to store code and data pending to be written
+    __weak JFRWebSocket *weakSelf = self;
     [self dequeueWithBlock:^{
         //stream isn't ready, let's wait
         int tries = 0;
@@ -685,9 +694,9 @@ static int BUFFER_MAX = 2048;
             if(!self.outputStream) {
                 break;
             }
-            NSInteger len = [self.outputStream write:([frame bytes]+total) maxLength:(NSInteger)(offset-total)];
+            NSInteger len = [weakSelf.outputStream write:([frame bytes]+total) maxLength:(NSInteger)(offset-total)];
             if(len < 0 || len == NSNotFound) {
-                [self doWriteError];
+                [weakSelf doWriteError];
                 break;
             } else {
                 total += len;
@@ -717,8 +726,9 @@ static int BUFFER_MAX = 2048;
 /////////////////////////////////////////////////////////////////////////////
 -(void)dealloc
 {
-    if(self.isConnected)
+    if(self.isConnected) {
         [self disconnect];
+    }
 }
 /////////////////////////////////////////////////////////////////////////////
 @end
