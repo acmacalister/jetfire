@@ -255,8 +255,9 @@ static int BUFFER_MAX = 2048;
         return;
     }
     self.isRunLoop = YES;
-    while (self.isRunLoop)
+    while (self.isRunLoop) {
         [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate distantFuture]];
+    }
 }
 /////////////////////////////////////////////////////////////////////////////
 
@@ -268,28 +269,27 @@ static int BUFFER_MAX = 2048;
     switch (eventCode) {
         case NSStreamEventNone:
             break;
+            
         case NSStreamEventOpenCompleted:
             break;
+            
         case NSStreamEventHasBytesAvailable:
-        {
-            if(aStream == self.inputStream)
+            if(aStream == self.inputStream) {
                 [self processInputStream];
+            }
             break;
-        }
+            
         case NSStreamEventHasSpaceAvailable:
-        {
             break;
-        }
+            
         case NSStreamEventErrorOccurred:
-        {
             [self disconnectStream:[aStream streamError]];
             break;
-        }
+            
         case NSStreamEventEndEncountered:
-        {
             [self disconnectStream:nil];
             break;
-        }
+            
         default:
             break;
     }
@@ -409,8 +409,9 @@ static int BUFFER_MAX = 2048;
     NSDictionary *headers = (__bridge_transfer NSDictionary *)(CFHTTPMessageCopyAllHeaderFields(response));
     NSString *acceptKey = headers[headerWSAcceptName];
     CFRelease(response);
-    if(acceptKey.length > 0)
+    if(acceptKey.length > 0) {
         return YES;
+    }
     return NO;
 }
 /////////////////////////////////////////////////////////////////////////////
@@ -449,21 +450,24 @@ static int BUFFER_MAX = 2048;
         uint8_t payloadLen = (JFRPayloadLenMask & buffer[1]);
         NSInteger offset = 2; //how many bytes do we need to skip for the header
         if((isMasked  || (JFRRSVMask & buffer[0])) && receivedOpcode != JFROpCodePong) {
-            if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)])
+            if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)]) {
                 [self.delegate websocketDidDisconnect:self error:[self errorWithDetail:@"masked and rsv data is not currently supported" code:JFRCloseCodeProtocolError]];
+            }
             [self writeError:JFRCloseCodeProtocolError];
             return;
         }
         BOOL isControlFrame = (receivedOpcode == JFROpCodeConnectionClose || receivedOpcode == JFROpCodePing); //|| receivedOpcode == JFROpCodePong
         if(!isControlFrame && (receivedOpcode != JFROpCodeBinaryFrame && receivedOpcode != JFROpCodeContinueFrame && receivedOpcode != JFROpCodeTextFrame && receivedOpcode != JFROpCodePong)) {
-            if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)])
+            if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)]) {
                 [self.delegate websocketDidDisconnect:self error:[self errorWithDetail:[NSString stringWithFormat:@"unknown opcode: 0x%x",receivedOpcode] code:JFRCloseCodeProtocolError]];
+            }
             [self writeError:JFRCloseCodeProtocolError];
             return;
         }
         if(isControlFrame && !isFin) {
-            if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)])
+            if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)]) {
                 [self.delegate websocketDidDisconnect:self error:[self errorWithDetail:@"control frames can't be fragmented" code:JFRCloseCodeProtocolError]];
+            }
             [self writeError:JFRCloseCodeProtocolError];
             return;
         }
@@ -489,8 +493,9 @@ static int BUFFER_MAX = 2048;
                 }
             }
             [self writeError:code];
-            if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)])
+            if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)]) {
                 [self.delegate websocketDidDisconnect:self error:[self errorWithDetail:@"continue frame before a binary or text frame" code:code]];
+            }
             return;
         }
         if(isControlFrame && payloadLen > 125) {
@@ -506,8 +511,9 @@ static int BUFFER_MAX = 2048;
             offset += sizeof(uint16_t);
         }
         NSInteger len = dataLength;
-        if(dataLength > bufferLen)
+        if(dataLength > bufferLen) {
             len = bufferLen-offset;
+        }
         NSData *data = nil;
         if(len < 0) {
             len = 0;
@@ -528,16 +534,18 @@ static int BUFFER_MAX = 2048;
             response = nil; //don't append pings
         }
         if(!isFin && receivedOpcode == JFROpCodeContinueFrame && !response) {
-            if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)])
+            if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)]) {
                 [self.delegate websocketDidDisconnect:self error:[self errorWithDetail:@"continue frame before a binary or text frame" code:JFRCloseCodeProtocolError]];
+            }
             [self writeError:JFRCloseCodeProtocolError];
             return;
         }
         BOOL isNew = NO;
         if(!response) {
             if(receivedOpcode == JFROpCodeContinueFrame) {
-                if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)])
+                if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)]) {
                     [self.delegate websocketDidDisconnect:self error:[self errorWithDetail:@"first frame can't be a continue frame" code:JFRCloseCodeProtocolError]];
+                }
                 [self writeError:JFRCloseCodeProtocolError];
                 return;
             }
@@ -550,8 +558,9 @@ static int BUFFER_MAX = 2048;
             if(receivedOpcode == JFROpCodeContinueFrame) {
                 response.bytesLeft = dataLength;
             } else {
-                if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)])
+                if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)]) {
                     [self.delegate websocketDidDisconnect:self error:[self errorWithDetail:@"second and beyond of fragment message must be a continue frame" code:JFRCloseCodeProtocolError]];
+                }
                 [self writeError:JFRCloseCodeProtocolError];
                 return;
             }
@@ -709,8 +718,9 @@ static int BUFFER_MAX = 2048;
 /////////////////////////////////////////////////////////////////////////////
 -(void)dealloc
 {
-    if(self.isConnected)
+    if(self.isConnected) {
         [self disconnect];
+    }
 }
 /////////////////////////////////////////////////////////////////////////////
 @end
