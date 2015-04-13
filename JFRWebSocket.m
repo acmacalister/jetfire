@@ -53,13 +53,20 @@ typedef NS_ENUM(NSUInteger, JFRCloseCode) {
 
 @end
 
+//holds the shared thread
+@interface JFRThread : NSThread
+
+//The shared run loop for all network related task
++(NSRunLoop*)sharedLoop;
+
+@end
+
 @interface JFRWebSocket ()<NSStreamDelegate>
 
 @property(nonatomic, strong)NSURL *url;
 @property(nonatomic, strong)NSInputStream *inputStream;
 @property(nonatomic, strong)NSOutputStream *outputStream;
 @property(nonatomic, strong)NSOperationQueue *writeQueue;
-@property(nonatomic, assign)BOOL isRunLoop;
 @property(nonatomic, strong)NSMutableArray *readStack;
 @property(nonatomic, strong)NSMutableArray *inputQueue;
 @property(nonatomic, strong)NSData *fragBuffer;
@@ -93,6 +100,7 @@ static int BUFFER_MAX = 2048;
 - (instancetype)initWithURL:(NSURL *)url protocols:(NSArray*)protocols
 {
     if(self = [super init]) {
+        [JFRThread sharedLoop]; //create the background thread and run loop
         self.voipEnabled = NO;
         self.selfSignedSSL = NO;
         self.queue = dispatch_get_main_queue();
@@ -112,12 +120,9 @@ static int BUFFER_MAX = 2048;
         return;
     }
     
-    //everything is on a background thread.
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        self.isCreated = YES;
-        [self createHTTPRequest];
-        self.isCreated = NO;
-    });
+    self.isCreated = YES;
+    [self createHTTPRequest];
+    self.isCreated = NO;
 }
 /////////////////////////////////////////////////////////////////////////////
 - (void)disconnect
@@ -245,19 +250,16 @@ static int BUFFER_MAX = 2048;
         [self.inputStream setProperty:settings forKey:key];
         [self.outputStream setProperty:settings forKey:key];
     }
-    [self.inputStream scheduleInRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
-    [self.outputStream scheduleInRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
+    [self.inputStream scheduleInRunLoop:[JFRThread sharedLoop] forMode:NSDefaultRunLoopMode];
+    [self.outputStream scheduleInRunLoop:[JFRThread sharedLoop] forMode:NSDefaultRunLoopMode];
     [self.inputStream open];
     [self.outputStream open];
-    NSInteger len = [self.outputStream write:[data bytes] maxLength:[data length]];
-    if(len < 0 || len == NSNotFound) {
-        [self doWriteError];
-        return;
-    }
-    self.isRunLoop = YES;
-    while (self.isRunLoop) {
-        [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate distantFuture]];
-    }
+    [self dequeueWithBlock:^{
+        NSInteger len = [self.outputStream write:[data bytes] maxLength:[data length]];
+        if(len < 0 || len == NSNotFound) {
+            [self doWriteError];
+        }
+    }];
 }
 /////////////////////////////////////////////////////////////////////////////
 
@@ -297,14 +299,14 @@ static int BUFFER_MAX = 2048;
 /////////////////////////////////////////////////////////////////////////////
 -(void)disconnectStream:(NSError*)error
 {
-    [self.writeQueue waitUntilAllOperationsAreFinished];
-    [self.inputStream removeFromRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
-    [self.outputStream removeFromRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
+    //need to pull custom NSOperations from write queue here...
+    [self.writeQueue cancelAllOperations];
+    [self.inputStream removeFromRunLoop:[JFRThread sharedLoop] forMode:NSDefaultRunLoopMode];
+    [self.outputStream removeFromRunLoop:[JFRThread sharedLoop] forMode:NSDefaultRunLoopMode];
     [self.outputStream close];
     [self.inputStream close];
     self.outputStream = nil;
     self.inputStream = nil;
-    self.isRunLoop = NO;
     _isConnected = NO;
     
     if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)]) {
@@ -629,14 +631,20 @@ static int BUFFER_MAX = 2048;
     return NO;
 }
 /////////////////////////////////////////////////////////////////////////////
--(void)dequeueWrite:(NSData*)data withCode:(JFROpCode)code
-{
+-(void)dequeueWithBlock:(void (^)(void))block {
     if(!self.writeQueue) {
         self.writeQueue = [[NSOperationQueue alloc] init];
         self.writeQueue.maxConcurrentOperationCount = 1;
     }
+    [self.writeQueue addOperationWithBlock:block];
+}
+/////////////////////////////////////////////////////////////////////////////
+-(void)dequeueWrite:(NSData*)data withCode:(JFROpCode)code
+{
     //we have a queue so we can be thread safe.
-    [self.writeQueue addOperationWithBlock:^{
+    //need to change to custom NSOperations to store code and data pending to be written
+    __weak JFRWebSocket *weakSelf = self;
+    [self dequeueWithBlock:^{
         //stream isn't ready, let's wait
         int tries = 0;
         while(!self.outputStream || !self.isConnected) {
@@ -686,9 +694,9 @@ static int BUFFER_MAX = 2048;
             if(!self.outputStream) {
                 break;
             }
-            NSInteger len = [self.outputStream write:([frame bytes]+total) maxLength:(NSInteger)(offset-total)];
+            NSInteger len = [weakSelf.outputStream write:([frame bytes]+total) maxLength:(NSInteger)(offset-total)];
             if(len < 0 || len == NSNotFound) {
-                [self doWriteError];
+                [weakSelf doWriteError];
                 break;
             } else {
                 total += len;
@@ -725,6 +733,47 @@ static int BUFFER_MAX = 2048;
 /////////////////////////////////////////////////////////////////////////////
 @end
 
+/////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////
+@interface JFRThread ()
+
+@property(nonatomic, assign)BOOL isRunning;
+@property(nonatomic, strong)NSRunLoop *loop;
+
+@end
+/////////////////////////////////////////////////////////////////////////////
+@implementation JFRThread
+
+/////////////////////////////////////////////////////////////////////////////
++(NSRunLoop*)sharedLoop {
+    return [[self shared] loop];
+}
+/////////////////////////////////////////////////////////////////////////////
++(instancetype)shared {
+    static JFRThread *manager = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        manager = [[self alloc] init];
+    });
+    return manager;
+}
+/////////////////////////////////////////////////////////////////////////////
+-(instancetype)init {
+    if(self = [super init]) {
+        self.isRunning = YES;
+        [self start];
+    }
+    return self;
+}
+/////////////////////////////////////////////////////////////////////////////
+-(void)main {
+    self.loop = [NSRunLoop currentRunLoop];
+    while (self.isRunning) {
+        [self.loop runMode:NSDefaultRunLoopMode beforeDate:[NSDate distantFuture]];
+    }
+}
+
+@end
 /////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////
 @implementation JFRResponse

@@ -22,6 +22,7 @@
     self.socket = [[JFRWebSocket alloc] initWithURL:[NSURL URLWithString:@"ws://localhost:8080"] protocols:@[@"chat",@"superchat"]];
     self.socket.delegate = self;
     [self.socket connect];
+    NSLog(@"hey there, just doing some main thread stuff...");
 }
 
 // pragma mark: WebSocket Delegate methods.
@@ -32,7 +33,7 @@
 
 -(void)websocketDidDisconnect:(JFRWebSocket*)socket error:(NSError*)error {
     NSLog(@"websocket is disconnected: %@", [error localizedDescription]);
-        [self.socket connect];
+        //[self.socket connect];
 }
 
 -(void)websocket:(JFRWebSocket*)socket didReceiveMessage:(NSString*)string {
@@ -50,7 +51,13 @@
 }
 
 - (IBAction)disconnect:(UIBarButtonItem *)sender {
-    [self.socket disconnect];
+    if(self.socket.isConnected) {
+        sender.title = NSLocalizedString(@"connect", nil);
+        [self.socket disconnect];
+    } else {
+        sender.title = NSLocalizedString(@"disconnect", nil);
+        [self.socket connect];
+    }
 }
 
 @end
