@@ -736,14 +736,14 @@ static int BUFFER_MAX = 2048;
 
 /////////////////////////////////////////////////////////////////////////////
 +(NSRunLoop*)sharedLoop {
-    return [self shared].loop;
+    return [[self shared] loop];
 }
 /////////////////////////////////////////////////////////////////////////////
-+(JFRThread*)shared {
++(instancetype)shared {
     static JFRThread *manager = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        manager = [[[self class] alloc] init];
+        manager = [[self alloc] init];
     });
     return manager;
 }
@@ -758,8 +758,9 @@ static int BUFFER_MAX = 2048;
 /////////////////////////////////////////////////////////////////////////////
 -(void)main {
     self.loop = [NSRunLoop currentRunLoop];
-    while (self.isRunning)
+    while (self.isRunning) {
         [self.loop runMode:NSDefaultRunLoopMode beforeDate:[NSDate distantFuture]];
+    }
 }
 
 @end
