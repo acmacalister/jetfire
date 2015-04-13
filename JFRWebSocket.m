@@ -70,17 +70,17 @@ typedef NS_ENUM(NSUInteger, JFRCloseCode) {
 @end
 
 //Constant Header Values.
-static const NSString *headerWSUpgradeName     = @"Upgrade";
-static const NSString *headerWSUpgradeValue    = @"websocket";
-static const NSString *headerWSHostName        = @"Host";
-static const NSString *headerWSConnectionName  = @"Connection";
-static const NSString *headerWSConnectionValue = @"Upgrade";
-static const NSString *headerWSProtocolName    = @"Sec-WebSocket-Protocol";
-static const NSString *headerWSVersionName     = @"Sec-Websocket-Version";
-static const NSString *headerWSVersionValue    = @"13";
-static const NSString *headerWSKeyName         = @"Sec-WebSocket-Key";
-static const NSString *headerOriginName        = @"Origin";
-static const NSString *headerWSAcceptName      = @"Sec-WebSocket-Accept";
+static NSString *const headerWSUpgradeName     = @"Upgrade";
+static NSString *const headerWSUpgradeValue    = @"websocket";
+static NSString *const headerWSHostName        = @"Host";
+static NSString *const headerWSConnectionName  = @"Connection";
+static NSString *const headerWSConnectionValue = @"Upgrade";
+static NSString *const headerWSProtocolName    = @"Sec-WebSocket-Protocol";
+static NSString *const headerWSVersionName     = @"Sec-Websocket-Version";
+static NSString *const headerWSVersionValue    = @"13";
+static NSString *const headerWSKeyName         = @"Sec-WebSocket-Key";
+static NSString *const headerOriginName        = @"Origin";
+static NSString *const headerWSAcceptName      = @"Sec-WebSocket-Accept";
 
 //Class Constants
 static char CRLFBytes[] = {'\r', '\n', '\r', '\n'};
