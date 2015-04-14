@@ -14,6 +14,10 @@
 		6B22F5D61A9D94C80052A037 /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 6B22F5D51A9D94C80052A037 /* Images.xcassets */; };
 		6B22F5D91A9D94C80052A037 /* LaunchScreen.xib in Resources */ = {isa = PBXBuildFile; fileRef = 6B22F5D71A9D94C80052A037 /* LaunchScreen.xib */; };
 		6B22F5F11A9D967D0052A037 /* JFRWebSocket.m in Sources */ = {isa = PBXBuildFile; fileRef = 6B22F5F01A9D967D0052A037 /* JFRWebSocket.m */; };
+		FC1A3CD91ADC751800F0BDBD /* TestWebSocket.m in Sources */ = {isa = PBXBuildFile; fileRef = FC1A3CD81ADC751800F0BDBD /* TestWebSocket.m */; };
+		FC1A3CDD1ADCCF1700F0BDBD /* TestOperation.m in Sources */ = {isa = PBXBuildFile; fileRef = FC1A3CDC1ADCCF1700F0BDBD /* TestOperation.m */; };
+		FC1A3CE01ADCCF9200F0BDBD /* TestCase.m in Sources */ = {isa = PBXBuildFile; fileRef = FC1A3CDF1ADCCF9200F0BDBD /* TestCase.m */; };
+		FC1A3CE61ADD6C8A00F0BDBD /* TestCaseTableViewcell.m in Sources */ = {isa = PBXBuildFile; fileRef = FC1A3CE51ADD6C8A00F0BDBD /* TestCaseTableViewcell.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -29,6 +33,14 @@
 		6B22F5D81A9D94C80052A037 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/LaunchScreen.xib; sourceTree = "<group>"; };
 		6B22F5EF1A9D967D0052A037 /* JFRWebSocket.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = JFRWebSocket.h; path = ../../JFRWebSocket.h; sourceTree = "<group>"; };
 		6B22F5F01A9D967D0052A037 /* JFRWebSocket.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = JFRWebSocket.m; path = ../../JFRWebSocket.m; sourceTree = "<group>"; };
+		FC1A3CD71ADC751800F0BDBD /* TestWebSocket.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = TestWebSocket.h; sourceTree = "<group>"; };
+		FC1A3CD81ADC751800F0BDBD /* TestWebSocket.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = TestWebSocket.m; sourceTree = "<group>"; };
+		FC1A3CDB1ADCCF1600F0BDBD /* TestOperation.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = TestOperation.h; sourceTree = "<group>"; };
+		FC1A3CDC1ADCCF1700F0BDBD /* TestOperation.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = TestOperation.m; sourceTree = "<group>"; };
+		FC1A3CDE1ADCCF9200F0BDBD /* TestCase.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = TestCase.h; sourceTree = "<group>"; };
+		FC1A3CDF1ADCCF9200F0BDBD /* TestCase.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = TestCase.m; sourceTree = "<group>"; };
+		FC1A3CE41ADD6C8A00F0BDBD /* TestCaseTableViewcell.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = TestCaseTableViewcell.h; sourceTree = "<group>"; };
+		FC1A3CE51ADD6C8A00F0BDBD /* TestCaseTableViewcell.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = TestCaseTableViewcell.m; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -67,6 +79,14 @@
 				6B22F5CD1A9D94C80052A037 /* AppDelegate.m */,
 				6B22F5CF1A9D94C80052A037 /* ViewController.h */,
 				6B22F5D01A9D94C80052A037 /* ViewController.m */,
+				FC1A3CE41ADD6C8A00F0BDBD /* TestCaseTableViewcell.h */,
+				FC1A3CE51ADD6C8A00F0BDBD /* TestCaseTableViewcell.m */,
+				FC1A3CDE1ADCCF9200F0BDBD /* TestCase.h */,
+				FC1A3CDF1ADCCF9200F0BDBD /* TestCase.m */,
+				FC1A3CD71ADC751800F0BDBD /* TestWebSocket.h */,
+				FC1A3CD81ADC751800F0BDBD /* TestWebSocket.m */,
+				FC1A3CDB1ADCCF1600F0BDBD /* TestOperation.h */,
+				FC1A3CDC1ADCCF1700F0BDBD /* TestOperation.m */,
 				6B22F5D21A9D94C80052A037 /* Main.storyboard */,
 				6B22F5D51A9D94C80052A037 /* Images.xcassets */,
 				6B22F5D71A9D94C80052A037 /* LaunchScreen.xib */,
@@ -155,9 +175,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				6B22F5D11A9D94C80052A037 /* ViewController.m in Sources */,
+				FC1A3CE61ADD6C8A00F0BDBD /* TestCaseTableViewcell.m in Sources */,
+				FC1A3CD91ADC751800F0BDBD /* TestWebSocket.m in Sources */,
 				6B22F5CE1A9D94C80052A037 /* AppDelegate.m in Sources */,
 				6B22F5F11A9D967D0052A037 /* JFRWebSocket.m in Sources */,
 				6B22F5CB1A9D94C80052A037 /* main.m in Sources */,
+				FC1A3CDD1ADCCF1700F0BDBD /* TestOperation.m in Sources */,
+				FC1A3CE01ADCCF9200F0BDBD /* TestCase.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -300,6 +324,7 @@
 				6B22F5EA1A9D94C80052A037 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
 	};
