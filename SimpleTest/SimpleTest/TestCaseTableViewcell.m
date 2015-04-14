@@ -60,8 +60,13 @@
 }
 
 - (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary *)change context:(void *)context {
+    NSAssert(![change[NSKeyValueChangeNewKey] isKindOfClass:[NSNull class]], @"Invalid test case value for %@ from Autobahn: %@", keyPath, change);
+
     __weak typeof(self) weakSelf = self;
     dispatch_async(dispatch_get_main_queue(), ^{
+        if (!weakSelf) {
+            return;
+        }
         
         if ([keyPath isEqualToString:@"identifier"]) {
             weakSelf.textLabel.text = change[NSKeyValueChangeNewKey];

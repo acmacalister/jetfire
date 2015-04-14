@@ -619,6 +619,11 @@ static int BUFFER_MAX = 2048;
         NSData *data = response.buffer;
         if(response.code == JFROpCodePing) {
             [self dequeueWrite:response.buffer withCode:JFROpCodePong];
+            if([self.delegate respondsToSelector:@selector(websocketDidReceivePing:)]) {
+                dispatch_async(self.queue,^{
+                    [self.delegate websocketDidReceivePing:self];
+                });
+            }
         } else if(response.code == JFROpCodeTextFrame) {
             NSString *str = [[NSString alloc] initWithData:response.buffer encoding:NSUTF8StringEncoding];
             if(!str) {

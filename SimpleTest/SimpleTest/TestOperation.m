@@ -56,8 +56,6 @@ static NSString *testAgent;
     
     [self didChangeValueForKey:@"isFinished"];
     [self didChangeValueForKey:@"isExecuting"];
-
-    //self.socket.delegate = nil; // breaks because we get disconnect before connect (???)
 }
 
 - (void)dealloc {
@@ -74,7 +72,6 @@ static NSString *testAgent;
     NSLog(@"[disconnected: %@]", [error localizedDescription]);
     self.socket.lastError = error;
     //@throw error;
-    //[self performSelector:@selector(done) withObject:nil afterDelay:1.5];
     [self done];
 }
 
@@ -82,21 +79,21 @@ static NSString *testAgent;
     self.socket.receivedText = string;
     [self.socket writeString:string];
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(done) object:nil];
-    [self performSelector:@selector(done) withObject:nil afterDelay:2.0];
+    [self performSelector:@selector(done) withObject:nil afterDelay:1.0];
 }
 
 - (void)websocket:(JFRWebSocket *)socket didReceiveData:(NSData *)data {
     self.socket.receivedData = data;
     [self.socket writeData:data];
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(done) object:nil];
-    [self performSelector:@selector(done) withObject:nil afterDelay:2.0];
+    [self performSelector:@selector(done) withObject:nil afterDelay:1.0];
 }
 
 - (void)websocketDidReceivePing:(JFRWebSocket *)socket {
     self.socket.receivedPing = YES;
     NSLog(@"* Ping!");
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(done) object:nil];
-    [self performSelector:@selector(done) withObject:nil afterDelay:2.0];
+    [self performSelector:@selector(done) withObject:nil afterDelay:1.0]; // allow time for queued pong to be sent
 }
 
 - (void)done {

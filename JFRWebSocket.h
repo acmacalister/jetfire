@@ -45,6 +45,12 @@
  */
 -(void)websocket:(JFRWebSocket*)socket didReceiveData:(NSData*)data;
 
+/**
+ The websocket got a 'ping' from the server (and replied automatically with a 'pong').
+ @param socket is the current socket object.
+ */
+-(void)websocketDidReceivePing:(JFRWebSocket*)socket;
+
 @end
 
 @interface JFRWebSocket : NSObject
