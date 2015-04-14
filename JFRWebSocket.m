@@ -65,7 +65,7 @@ typedef NS_ENUM(NSUInteger, JFRCloseCode) {
 @property(nonatomic, strong)NSMutableDictionary *headers;
 @property(nonatomic, strong)NSArray *optProtocols;
 @property(nonatomic, assign)BOOL isCreated;
-@property(nonatomic)dispatch_queue_t callbackQueue;
+@property(nonatomic)dispatch_queue_t workQueue;
 
 @end
 
@@ -97,12 +97,12 @@ static int BUFFER_MAX = 2048;
     if(self = [super init]) {
         self.voipEnabled = NO;
         self.selfSignedSSL = NO;
-        self.queue = dispatch_get_main_queue();
+        self.delegateQueue = dispatch_get_main_queue();
         self.url = url;
         self.readStack = [NSMutableArray new];
         self.inputQueue = [NSMutableArray new];
         self.optProtocols = protocols;
-        self.callbackQueue = dispatch_queue_create("com.vluxe.jetfire.socket", DISPATCH_QUEUE_SERIAL);
+        self.workQueue = dispatch_queue_create("com.vluxe.jetfire.socket", DISPATCH_QUEUE_SERIAL);
         self.writeQueue = [[NSOperationQueue alloc] init];
         self.writeQueue.maxConcurrentOperationCount = 1;
     }
@@ -142,10 +142,12 @@ static int BUFFER_MAX = 2048;
 /////////////////////////////////////////////////////////////////////////////
 - (void)addHeader:(NSString*)value forKey:(NSString*)key
 {
-    if(!self.headers) {
-        self.headers = [[NSMutableDictionary alloc] init];
-    }
-    [self.headers setObject:value forKey:key];
+    dispatch_async(self.workQueue,^{
+        if(!self.headers) {
+            self.headers = [[NSMutableDictionary alloc] init];
+        }
+        [self.headers setObject:value forKey:key];
+    });
 }
 /////////////////////////////////////////////////////////////////////////////
 
@@ -197,11 +199,10 @@ static int BUFFER_MAX = 2048;
                                      (__bridge CFStringRef)headerWSHostName,
                                      (__bridge CFStringRef)[NSString stringWithFormat:@"%@:%@",self.url.host,port]);
     
-    NSDictionary *heads = [self.headers copy];
-    for(NSString *key in heads) {
+    for(NSString *key in self.headers) {
         CFHTTPMessageSetHeaderFieldValue(urlRequest,
                                          (__bridge CFStringRef)key,
-                                         (__bridge CFStringRef)heads[key]);
+                                         (__bridge CFStringRef)self.headers[key]);
     }
     
     NSData *serializedRequest = (__bridge_transfer NSData *)(CFHTTPMessageCopySerializedMessage(urlRequest));
@@ -248,14 +249,15 @@ static int BUFFER_MAX = 2048;
         [self.inputStream setProperty:settings forKey:key];
         [self.outputStream setProperty:settings forKey:key];
     }
-    CFReadStreamSetDispatchQueue(readStream, self.callbackQueue);
-    CFWriteStreamSetDispatchQueue(writeStream, self.callbackQueue);
+    CFReadStreamSetDispatchQueue(readStream, self.workQueue);
+    CFWriteStreamSetDispatchQueue(writeStream, self.workQueue);
     [self.inputStream open];
     [self.outputStream open];
+    __weak JFRWebSocket *weakSelf = self;
     [self.writeQueue addOperationWithBlock:^{
-        NSInteger len = [self.outputStream write:[data bytes] maxLength:[data length]];
+        NSInteger len = [weakSelf.outputStream write:[data bytes] maxLength:[data length]];
         if(len < 0 || len == NSNotFound) {
-            dispatch_async(self.callbackQueue, ^{
+            dispatch_async(weakSelf.workQueue, ^{
                 [self doWriteError];
             });
         }
@@ -316,20 +318,20 @@ static int BUFFER_MAX = 2048;
 /////////////////////////////////////////////////////////////////////////////
 - (void)processInputStream
 {
-    uint8_t buffer[BUFFER_MAX];
-    NSInteger length = [self.inputStream read:buffer maxLength:BUFFER_MAX];
-    if(length > 0) {
-        if(!self.isConnected) {
-            _isConnected = [self processHTTP:buffer length:length];
+    @autoreleasepool {
+        uint8_t buffer[BUFFER_MAX];
+        NSInteger length = [self.inputStream read:buffer maxLength:BUFFER_MAX];
+        if(length > 0) {
             if(!self.isConnected) {
-                [self notifyDelegateDidDisconnectWithReason:@"Invalid HTTP upgrade" code:1];
-            }
-        } else {
-            BOOL process = NO;
-            if(self.inputQueue.count == 0) {
-                process = YES;
-            }
-            @autoreleasepool {
+                _isConnected = [self processHTTP:buffer length:length];
+                if(!self.isConnected) {
+                    [self notifyDelegateDidDisconnectWithReason:@"Invalid HTTP upgrade" code:1];
+                }
+            } else {
+                BOOL process = NO;
+                if(self.inputQueue.count == 0) {
+                    process = YES;
+                }
                 [self.inputQueue addObject:[NSData dataWithBytes:buffer length:length]];
                 if(process) {
                     [self dequeueInput];
@@ -377,7 +379,7 @@ static int BUFFER_MAX = 2048;
         if([self validateResponse:buffer length:totalSize])
         {
             [self notifyDelegateDidConnect];
-            
+
             totalSize += 1; //skip the last \n
             NSInteger  restSize = bufferLen-totalSize;
             if(restSize > 0) {
@@ -492,6 +494,7 @@ static int BUFFER_MAX = 2048;
             [self notifyDelegateDidDisconnectWithReason:@"continue frame before a binary or text frame" code:code];
             
             [self writeError:code];
+
             return;
         }
         if(isControlFrame && payloadLen > 125) {
@@ -594,9 +597,9 @@ static int BUFFER_MAX = 2048;
 -(BOOL)processResponse:(JFRResponse*)response
 {
     if(response.isFin && response.bytesLeft <= 0) {
-        NSData *data = response.buffer;
+        
         if(response.code == JFROpCodePing) {
-            [self dequeueWrite:response.buffer withCode:JFROpCodePong];
+            [self dequeueWrite:[response.buffer copy] withCode:JFROpCodePong];
             
             [self notifyDelegateDidReceivePing];
             
@@ -606,10 +609,10 @@ static int BUFFER_MAX = 2048;
                 [self writeError:JFRCloseCodeEncoding];
                 return NO;
             }
-            
             [self notifyDelegateDidReceiveMessage:str];
             
         } else if([self.delegate respondsToSelector:@selector(websocket:didReceiveData:)]) {
+            NSData *data = [response.buffer copy];
             [self notifyDelegateDidReceiveData:data];
         }
         [self.readStack removeLastObject];
@@ -713,7 +716,6 @@ static int BUFFER_MAX = 2048;
     return [NSError errorWithDomain:errorDomain code:code userInfo:userInfo];
 }
 /////////////////////////////////////////////////////////////////////////////
-
 // Centralize all delegate communication for simplicity. Nice side effect is improved branch
 // prediction by sharing the `responseToSelector` conditionals that don't usually change.
 -(void)notifyDelegateDidConnect {
@@ -721,7 +723,7 @@ static int BUFFER_MAX = 2048;
         return;
     }
     
-    dispatch_async(self.queue, ^{
+    dispatch_async(self.delegateQueue, ^{
         [self.delegate websocketDidConnect:self];
     });
 }
@@ -731,7 +733,7 @@ static int BUFFER_MAX = 2048;
         return;
     }
     
-    dispatch_async(self.queue, ^{
+    dispatch_async(self.delegateQueue, ^{
         NSError *error = [self errorWithDetail:reason code:code];
         [self.delegate websocketDidDisconnect:self error:error];
     });
@@ -742,7 +744,7 @@ static int BUFFER_MAX = 2048;
         return;
     }
     
-    dispatch_async(self.queue, ^{
+    dispatch_async(self.delegateQueue, ^{
         [self.delegate websocketDidDisconnect:self error:error];
     });
 }
@@ -752,7 +754,7 @@ static int BUFFER_MAX = 2048;
         return;
     }
     
-    dispatch_async(self.queue, ^{
+    dispatch_async(self.delegateQueue, ^{
         [self.delegate websocket:self didReceiveMessage:message];
     });
 }
@@ -762,7 +764,7 @@ static int BUFFER_MAX = 2048;
         return;
     }
     
-    dispatch_async(self.queue, ^{
+    dispatch_async(self.delegateQueue, ^{
         [self.delegate websocket:self didReceiveData:data];
     });
     
@@ -773,7 +775,7 @@ static int BUFFER_MAX = 2048;
         return;
     }
     
-    dispatch_async(self.queue, ^{
+    dispatch_async(self.delegateQueue, ^{
         [self.delegate websocketDidReceivePing:self];
     });
 }
