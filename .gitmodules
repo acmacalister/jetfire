@@ -1,0 +1,3 @@
+[submodule "SimpleTest/AutobahnTestSuite"]
+	path = SimpleTest/AutobahnTestSuite
+	url = https://github.com/tavendo/AutobahnTestSuite.git
