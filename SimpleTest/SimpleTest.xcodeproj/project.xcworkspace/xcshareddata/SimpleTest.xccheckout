@@ -12,6 +12,8 @@
 	<dict>
 		<key>783C674DD37A2B591E98A680EBDE1BBF176CB961</key>
 		<string>https://github.com/acmacalister/jetfire.git</string>
+		<key>DD1B5448419487007EA7CFB938DE5848110E567B</key>
+		<string>https://github.com/tavendo/AutobahnTestSuite.git</string>
 	</dict>
 	<key>IDESourceControlProjectPath</key>
 	<string>SimpleTest/SimpleTest.xcodeproj</string>
@@ -19,6 +21,8 @@
 	<dict>
 		<key>783C674DD37A2B591E98A680EBDE1BBF176CB961</key>
 		<string>../../..</string>
+		<key>DD1B5448419487007EA7CFB938DE5848110E567B</key>
+		<string>../../../SimpleTest/AutobahnTestSuite/</string>
 	</dict>
 	<key>IDESourceControlProjectURL</key>
 	<string>https://github.com/acmacalister/jetfire.git</string>
@@ -28,6 +32,14 @@
 	<string>783C674DD37A2B591E98A680EBDE1BBF176CB961</string>
 	<key>IDESourceControlProjectWCConfigurations</key>
 	<array>
+		<dict>
+			<key>IDESourceControlRepositoryExtensionIdentifierKey</key>
+			<string>public.vcs.git</string>
+			<key>IDESourceControlWCCIdentifierKey</key>
+			<string>DD1B5448419487007EA7CFB938DE5848110E567B</string>
+			<key>IDESourceControlWCCName</key>
+			<string>AutobahnTestSuite</string>
+		</dict>
 		<dict>
 			<key>IDESourceControlRepositoryExtensionIdentifierKey</key>
 			<string>public.vcs.git</string>

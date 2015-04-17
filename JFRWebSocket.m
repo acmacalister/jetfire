@@ -611,10 +611,9 @@ static int BUFFER_MAX = 2048;
     if(response.isFin && response.bytesLeft <= 0) {
         
         if(response.code == JFROpCodePing) {
+            
             [self dequeueWrite:[response.buffer copy] withCode:JFROpCodePong];
-            
             [self notifyDelegateDidReceivePing];
-            
         } else if(response.code == JFROpCodeTextFrame) {
             NSString *str = [[NSString alloc] initWithData:response.buffer encoding:NSUTF8StringEncoding];
             if(!str) {
