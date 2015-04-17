@@ -48,11 +48,7 @@
 /**
  The websocket got a 'ping' from the server (and replied automatically with a 'pong').
  @param socket is the current socket object.
-<<<<<<< HEAD
 */
-=======
- */
->>>>>>> test-suite
 -(void)websocketDidReceivePing:(JFRWebSocket*)socket;
 
 @end
