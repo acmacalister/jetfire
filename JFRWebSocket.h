@@ -115,7 +115,7 @@
  Set your own custom queue.
  Default setting is dispatch_get_main_queue.
  */
-@property(nonatomic)dispatch_queue_t delegateQueue;
+@property(nonatomic, weak)dispatch_queue_t delegateQueue;
 
 
 @end

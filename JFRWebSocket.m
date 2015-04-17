@@ -65,7 +65,7 @@ typedef NS_ENUM(NSUInteger, JFRCloseCode) {
 @property(nonatomic, strong)NSMutableDictionary *headers;
 @property(nonatomic, strong)NSArray *optProtocols;
 @property(nonatomic, assign)BOOL isCreated;
-@property(nonatomic)dispatch_queue_t workQueue;
+@property(nonatomic, strong)dispatch_queue_t workQueue;
 
 @end
 
@@ -270,6 +270,10 @@ static int BUFFER_MAX = 2048;
 /////////////////////////////////////////////////////////////////////////////
 - (void)stream:(NSStream *)aStream handleEvent:(NSStreamEvent)eventCode
 {
+    if(!aStream || !aStream.delegate) {
+        return;
+    }
+    
     switch (eventCode) {
         case NSStreamEventNone:
             break;
@@ -302,8 +306,16 @@ static int BUFFER_MAX = 2048;
 -(void)disconnectStream:(NSError*)error
 {
     [self.writeQueue cancelAllOperations];
-    [self.outputStream close];
-    [self.inputStream close];
+    if(self.inputStream) {
+        [self.inputStream close];
+        self.inputStream.delegate = nil;
+        CFReadStreamSetDispatchQueue((__bridge  CFReadStreamRef)self.inputStream, NULL);
+    }
+    if(self.outputStream) {
+        [self.outputStream close];
+        self.outputStream.delegate = nil;
+        CFWriteStreamSetDispatchQueue((__bridge  CFWriteStreamRef)self.outputStream, NULL);
+    }
     self.outputStream = nil;
     self.inputStream = nil;
     _isConnected = NO;
@@ -783,9 +795,7 @@ static int BUFFER_MAX = 2048;
 /////////////////////////////////////////////////////////////////////////////
 -(void)dealloc
 {
-    if(self.isConnected) {
-        [self disconnect];
-    }
+    [self disconnectStream:nil];
 }
 /////////////////////////////////////////////////////////////////////////////
 @end
