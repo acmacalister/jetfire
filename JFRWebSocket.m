@@ -253,6 +253,7 @@ static int BUFFER_MAX = 2048;
     CFWriteStreamSetDispatchQueue(writeStream, self.workQueue);
     [self.inputStream open];
     [self.outputStream open];
+    self.writeQueue.suspended = YES; // suspend until write stream delegate callback "space available"
     __weak JFRWebSocket *weakSelf = self;
     [self.writeQueue addOperationWithBlock:^{
         NSInteger len = [weakSelf.outputStream write:[data bytes] maxLength:[data length]];
@@ -288,6 +289,9 @@ static int BUFFER_MAX = 2048;
             break;
             
         case NSStreamEventHasSpaceAvailable:
+            if(aStream == self.outputStream && self.writeQueue.isSuspended) {
+                self.writeQueue.suspended = NO;
+            }
             break;
             
         case NSStreamEventErrorOccurred:
