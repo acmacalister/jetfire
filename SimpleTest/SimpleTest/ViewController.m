@@ -32,7 +32,6 @@
 
 -(void)websocketDidDisconnect:(JFRWebSocket*)socket error:(NSError*)error {
     NSLog(@"websocket is disconnected: %@", [error localizedDescription]);
-        [self.socket connect];
 }
 
 -(void)websocket:(JFRWebSocket*)socket didReceiveMessage:(NSString*)string {
@@ -50,7 +49,13 @@
 }
 
 - (IBAction)disconnect:(UIBarButtonItem *)sender {
-    [self.socket disconnect];
+    if(self.socket.isConnected) {
+        sender.title = @"connect";
+        [self.socket disconnect];
+    } else {
+        sender.title = @"disconnect";
+        [self.socket connect];
+    }
 }
 
 @end

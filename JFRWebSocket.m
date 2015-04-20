@@ -59,13 +59,13 @@ typedef NS_ENUM(NSUInteger, JFRCloseCode) {
 @property(nonatomic, strong)NSInputStream *inputStream;
 @property(nonatomic, strong)NSOutputStream *outputStream;
 @property(nonatomic, strong)NSOperationQueue *writeQueue;
-@property(nonatomic, assign)BOOL isRunLoop;
 @property(nonatomic, strong)NSMutableArray *readStack;
 @property(nonatomic, strong)NSMutableArray *inputQueue;
 @property(nonatomic, strong)NSData *fragBuffer;
 @property(nonatomic, strong)NSMutableDictionary *headers;
 @property(nonatomic, strong)NSArray *optProtocols;
 @property(nonatomic, assign)BOOL isCreated;
+@property(nonatomic, strong)dispatch_queue_t workQueue;
 
 @end
 
@@ -82,6 +82,8 @@ static NSString *const headerWSKeyName         = @"Sec-WebSocket-Key";
 static NSString *const headerOriginName        = @"Origin";
 static NSString *const headerWSAcceptName      = @"Sec-WebSocket-Accept";
 
+static NSString *const errorDomain = @"JFRWebSocket";
+
 //Class Constants
 static char CRLFBytes[] = {'\r', '\n', '\r', '\n'};
 static int BUFFER_MAX = 2048;
@@ -95,11 +97,14 @@ static int BUFFER_MAX = 2048;
     if(self = [super init]) {
         self.voipEnabled = NO;
         self.selfSignedSSL = NO;
-        self.queue = dispatch_get_main_queue();
+        self.delegateQueue = dispatch_get_main_queue();
         self.url = url;
         self.readStack = [NSMutableArray new];
         self.inputQueue = [NSMutableArray new];
         self.optProtocols = protocols;
+        self.workQueue = dispatch_queue_create("com.vluxe.jetfire.socket", DISPATCH_QUEUE_SERIAL);
+        self.writeQueue = [[NSOperationQueue alloc] init];
+        self.writeQueue.maxConcurrentOperationCount = 1;
     }
     
     return self;
@@ -112,12 +117,9 @@ static int BUFFER_MAX = 2048;
         return;
     }
     
-    //everything is on a background thread.
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        self.isCreated = YES;
-        [self createHTTPRequest];
-        self.isCreated = NO;
-    });
+    self.isCreated = YES;
+    [self createHTTPRequest];
+    self.isCreated = NO;
 }
 /////////////////////////////////////////////////////////////////////////////
 - (void)disconnect
@@ -140,10 +142,12 @@ static int BUFFER_MAX = 2048;
 /////////////////////////////////////////////////////////////////////////////
 - (void)addHeader:(NSString*)value forKey:(NSString*)key
 {
-    if(!self.headers) {
-        self.headers = [[NSMutableDictionary alloc] init];
-    }
-    [self.headers setObject:value forKey:key];
+    dispatch_async(self.workQueue,^{
+        if(!self.headers) {
+            self.headers = [[NSMutableDictionary alloc] init];
+        }
+        [self.headers setObject:value forKey:key];
+    });
 }
 /////////////////////////////////////////////////////////////////////////////
 
@@ -245,19 +249,20 @@ static int BUFFER_MAX = 2048;
         [self.inputStream setProperty:settings forKey:key];
         [self.outputStream setProperty:settings forKey:key];
     }
-    [self.inputStream scheduleInRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
-    [self.outputStream scheduleInRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
+    CFReadStreamSetDispatchQueue(readStream, self.workQueue);
+    CFWriteStreamSetDispatchQueue(writeStream, self.workQueue);
     [self.inputStream open];
     [self.outputStream open];
-    NSInteger len = [self.outputStream write:[data bytes] maxLength:[data length]];
-    if(len < 0 || len == NSNotFound) {
-        [self doWriteError];
-        return;
-    }
-    self.isRunLoop = YES;
-    while (self.isRunLoop) {
-        [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate distantFuture]];
-    }
+    self.writeQueue.suspended = YES; // suspend until write stream delegate callback "space available"
+    __weak JFRWebSocket *weakSelf = self;
+    [self.writeQueue addOperationWithBlock:^{
+        NSInteger len = [weakSelf.outputStream write:[data bytes] maxLength:[data length]];
+        if(len < 0 || len == NSNotFound) {
+            dispatch_async(weakSelf.workQueue, ^{
+                [self doWriteError];
+            });
+        }
+    }];
 }
 /////////////////////////////////////////////////////////////////////////////
 
@@ -266,6 +271,10 @@ static int BUFFER_MAX = 2048;
 /////////////////////////////////////////////////////////////////////////////
 - (void)stream:(NSStream *)aStream handleEvent:(NSStreamEvent)eventCode
 {
+    if(!aStream || !aStream.delegate) {
+        return;
+    }
+    
     switch (eventCode) {
         case NSStreamEventNone:
             break;
@@ -280,6 +289,9 @@ static int BUFFER_MAX = 2048;
             break;
             
         case NSStreamEventHasSpaceAvailable:
+            if(aStream == self.outputStream && self.writeQueue.isSuspended) {
+                self.writeQueue.suspended = NO;
+            }
             break;
             
         case NSStreamEventErrorOccurred:
@@ -297,21 +309,23 @@ static int BUFFER_MAX = 2048;
 /////////////////////////////////////////////////////////////////////////////
 -(void)disconnectStream:(NSError*)error
 {
-    [self.writeQueue waitUntilAllOperationsAreFinished];
-    [self.inputStream removeFromRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
-    [self.outputStream removeFromRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
-    [self.outputStream close];
-    [self.inputStream close];
+    [self.writeQueue cancelAllOperations];
+    if(self.inputStream) {
+        [self.inputStream close];
+        self.inputStream.delegate = nil;
+        CFReadStreamSetDispatchQueue((__bridge  CFReadStreamRef)self.inputStream, NULL);
+    }
+    if(self.outputStream) {
+        [self.outputStream close];
+        self.outputStream.delegate = nil;
+        CFWriteStreamSetDispatchQueue((__bridge  CFWriteStreamRef)self.outputStream, NULL);
+    }
     self.outputStream = nil;
     self.inputStream = nil;
-    self.isRunLoop = NO;
     _isConnected = NO;
     
-    if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)]) {
-        dispatch_async(self.queue,^{
-            [self.delegate websocketDidDisconnect:self error:error];
-        });
-    }
+    // Enqueue the delegate callback behind any pending (already received) data processing.
+    [self notifyDelegateDidDisconnectWithError:error];
 }
 /////////////////////////////////////////////////////////////////////////////
 
@@ -327,8 +341,7 @@ static int BUFFER_MAX = 2048;
             if(!self.isConnected) {
                 _isConnected = [self processHTTP:buffer length:length];
                 if(!self.isConnected) {
-                    if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)])
-                        [self.delegate websocketDidDisconnect:self error:[self errorWithDetail:@"Invalid HTTP upgrade" code:1]];
+                    [self notifyDelegateDidDisconnectWithReason:@"Invalid HTTP upgrade" code:1];
                 }
             } else {
                 BOOL process = NO;
@@ -381,11 +394,8 @@ static int BUFFER_MAX = 2048;
         
         if([self validateResponse:buffer length:totalSize])
         {
-            if([self.delegate respondsToSelector:@selector(websocketDidConnect:)]) {
-                dispatch_async(self.queue,^{
-                    [self.delegate websocketDidConnect:self];
-                });
-            }
+            [self notifyDelegateDidConnect];
+
             totalSize += 1; //skip the last \n
             NSInteger  restSize = bufferLen-totalSize;
             if(restSize > 0) {
@@ -450,24 +460,28 @@ static int BUFFER_MAX = 2048;
         uint8_t payloadLen = (JFRPayloadLenMask & buffer[1]);
         NSInteger offset = 2; //how many bytes do we need to skip for the header
         if((isMasked  || (JFRRSVMask & buffer[0])) && receivedOpcode != JFROpCodePong) {
-            if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)]) {
-                [self.delegate websocketDidDisconnect:self error:[self errorWithDetail:@"masked and rsv data is not currently supported" code:JFRCloseCodeProtocolError]];
-            }
+            
+            [self notifyDelegateDidDisconnectWithReason:@"masked and rsv data is not currently supported"
+                                                   code:JFRCloseCodeProtocolError];
+            
             [self writeError:JFRCloseCodeProtocolError];
             return;
         }
         BOOL isControlFrame = (receivedOpcode == JFROpCodeConnectionClose || receivedOpcode == JFROpCodePing); //|| receivedOpcode == JFROpCodePong
         if(!isControlFrame && (receivedOpcode != JFROpCodeBinaryFrame && receivedOpcode != JFROpCodeContinueFrame && receivedOpcode != JFROpCodeTextFrame && receivedOpcode != JFROpCodePong)) {
-            if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)]) {
-                [self.delegate websocketDidDisconnect:self error:[self errorWithDetail:[NSString stringWithFormat:@"unknown opcode: 0x%x",receivedOpcode] code:JFRCloseCodeProtocolError]];
-            }
+            
+            NSString *reason = [NSString stringWithFormat:@"unknown opcode: 0x%x",receivedOpcode];
+            [self notifyDelegateDidDisconnectWithReason:reason
+                                                   code:JFRCloseCodeProtocolError];
+
             [self writeError:JFRCloseCodeProtocolError];
             return;
         }
         if(isControlFrame && !isFin) {
-            if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)]) {
-                [self.delegate websocketDidDisconnect:self error:[self errorWithDetail:@"control frames can't be fragmented" code:JFRCloseCodeProtocolError]];
-            }
+            
+            [self notifyDelegateDidDisconnectWithReason:@"control frames can't be fragmented"
+                                                   code:JFRCloseCodeProtocolError];
+
             [self writeError:JFRCloseCodeProtocolError];
             return;
         }
@@ -492,10 +506,11 @@ static int BUFFER_MAX = 2048;
                     code = JFRCloseCodeProtocolError;
                 }
             }
+            
+            [self notifyDelegateDidDisconnectWithReason:@"continue frame before a binary or text frame" code:code];
+            
             [self writeError:code];
-            if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)]) {
-                [self.delegate websocketDidDisconnect:self error:[self errorWithDetail:@"continue frame before a binary or text frame" code:code]];
-            }
+
             return;
         }
         if(isControlFrame && payloadLen > 125) {
@@ -534,18 +549,19 @@ static int BUFFER_MAX = 2048;
             response = nil; //don't append pings
         }
         if(!isFin && receivedOpcode == JFROpCodeContinueFrame && !response) {
-            if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)]) {
-                [self.delegate websocketDidDisconnect:self error:[self errorWithDetail:@"continue frame before a binary or text frame" code:JFRCloseCodeProtocolError]];
-            }
+            
+            [self notifyDelegateDidDisconnectWithReason:@"continue frame before a binary or text frame" code:JFRCloseCodeProtocolError];
+            
             [self writeError:JFRCloseCodeProtocolError];
             return;
         }
         BOOL isNew = NO;
         if(!response) {
+            
             if(receivedOpcode == JFROpCodeContinueFrame) {
-                if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)]) {
-                    [self.delegate websocketDidDisconnect:self error:[self errorWithDetail:@"first frame can't be a continue frame" code:JFRCloseCodeProtocolError]];
-                }
+                
+                [self notifyDelegateDidDisconnectWithReason:@"first frame can't be a continue frame" code:JFRCloseCodeProtocolError];
+
                 [self writeError:JFRCloseCodeProtocolError];
                 return;
             }
@@ -555,12 +571,14 @@ static int BUFFER_MAX = 2048;
             response.bytesLeft = dataLength;
             response.buffer = [NSMutableData dataWithData:data];
         } else {
+            
             if(receivedOpcode == JFROpCodeContinueFrame) {
                 response.bytesLeft = dataLength;
             } else {
-                if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)]) {
-                    [self.delegate websocketDidDisconnect:self error:[self errorWithDetail:@"second and beyond of fragment message must be a continue frame" code:JFRCloseCodeProtocolError]];
-                }
+                
+                [self notifyDelegateDidDisconnectWithReason:@"second and beyond of fragment message must be a continue frame"
+                                                       code:JFRCloseCodeProtocolError];
+
                 [self writeError:JFRCloseCodeProtocolError];
                 return;
             }
@@ -595,24 +613,23 @@ static int BUFFER_MAX = 2048;
 -(BOOL)processResponse:(JFRResponse*)response
 {
     if(response.isFin && response.bytesLeft <= 0) {
-        NSData *data = response.buffer;
+        
         if(response.code == JFROpCodePing) {
-            [self dequeueWrite:response.buffer withCode:JFROpCodePong];
+            [self dequeueWrite:[response.buffer copy] withCode:JFROpCodePong];
+            
+            [self notifyDelegateDidReceivePing];
+            
         } else if(response.code == JFROpCodeTextFrame) {
             NSString *str = [[NSString alloc] initWithData:response.buffer encoding:NSUTF8StringEncoding];
             if(!str) {
                 [self writeError:JFRCloseCodeEncoding];
                 return NO;
             }
-            if([self.delegate respondsToSelector:@selector(websocket:didReceiveMessage:)]) {
-                dispatch_async(self.queue,^{
-                    [self.delegate websocket:self didReceiveMessage:str];
-                });
-            }
+            [self notifyDelegateDidReceiveMessage:str];
+            
         } else if([self.delegate respondsToSelector:@selector(websocket:didReceiveData:)]) {
-            dispatch_async(self.queue,^{
-                [self.delegate websocket:self didReceiveData:data];
-            });
+            NSData *data = [response.buffer copy];
+            [self notifyDelegateDidReceiveData:data];
         }
         [self.readStack removeLastObject];
         return YES;
@@ -631,15 +648,12 @@ static int BUFFER_MAX = 2048;
 /////////////////////////////////////////////////////////////////////////////
 -(void)dequeueWrite:(NSData*)data withCode:(JFROpCode)code
 {
-    if(!self.writeQueue) {
-        self.writeQueue = [[NSOperationQueue alloc] init];
-        self.writeQueue.maxConcurrentOperationCount = 1;
-    }
     //we have a queue so we can be thread safe.
+    __weak JFRWebSocket *weakSelf = self;
     [self.writeQueue addOperationWithBlock:^{
         //stream isn't ready, let's wait
         int tries = 0;
-        while(!self.outputStream || !self.isConnected) {
+        while(!weakSelf.outputStream || !weakSelf.isConnected) {
             if(tries < 5) {
                 sleep(1);
             } else {
@@ -683,12 +697,12 @@ static int BUFFER_MAX = 2048;
         }
         uint64_t total = 0;
         while (true) {
-            if(!self.outputStream) {
+            if(!weakSelf.outputStream) {
                 break;
             }
-            NSInteger len = [self.outputStream write:([frame bytes]+total) maxLength:(NSInteger)(offset-total)];
+            NSInteger len = [weakSelf.outputStream write:([frame bytes]+total) maxLength:(NSInteger)(offset-total)];
             if(len < 0 || len == NSNotFound) {
-                [self doWriteError];
+                [weakSelf doWriteError];
                 break;
             } else {
                 total += len;
@@ -702,25 +716,90 @@ static int BUFFER_MAX = 2048;
 /////////////////////////////////////////////////////////////////////////////
 -(void)doWriteError
 {
+    [self disconnectStream:nil];
+
     NSError *error = [self.outputStream streamError];
-    if(!error) {
-        error = [self errorWithDetail:@"output stream error during write" code:2];
+    if (error) {
+        [self notifyDelegateDidDisconnectWithError:error];
+    } else {
+        [self notifyDelegateDidDisconnectWithReason:@"output stream error during write" code:2];
     }
-    [self disconnectStream:error];
 }
 /////////////////////////////////////////////////////////////////////////////
 -(NSError*)errorWithDetail:(NSString*)detail code:(NSInteger)code
 {
-    NSMutableDictionary* details = [NSMutableDictionary dictionary];
-    [details setValue:detail forKey:NSLocalizedDescriptionKey];
-    return [[NSError alloc] initWithDomain:@"JFRWebSocket" code:code userInfo:details];
+    NSDictionary* userInfo = @{ NSLocalizedDescriptionKey: detail };
+    return [NSError errorWithDomain:errorDomain code:code userInfo:userInfo];
 }
+/////////////////////////////////////////////////////////////////////////////
+// Centralize all delegate communication for simplicity. Nice side effect is improved branch
+// prediction by sharing the `responseToSelector` conditionals that don't usually change.
+-(void)notifyDelegateDidConnect {
+    if (![self.delegate respondsToSelector:@selector(websocketDidConnect:)]) {
+        return;
+    }
+    
+    dispatch_async(self.delegateQueue, ^{
+        [self.delegate websocketDidConnect:self];
+    });
+}
+
+-(void)notifyDelegateDidDisconnectWithReason:(NSString *)reason code:(NSInteger)code {
+    if (![self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)]) {
+        return;
+    }
+    
+    dispatch_async(self.delegateQueue, ^{
+        NSError *error = [self errorWithDetail:reason code:code];
+        [self.delegate websocketDidDisconnect:self error:error];
+    });
+}
+
+-(void)notifyDelegateDidDisconnectWithError:(NSError *)error {
+    if (![self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)]) {
+        return;
+    }
+    
+    dispatch_async(self.delegateQueue, ^{
+        [self.delegate websocketDidDisconnect:self error:error];
+    });
+}
+
+-(void)notifyDelegateDidReceiveMessage:(NSString *)message {
+    if (![self.delegate respondsToSelector:@selector(websocket:didReceiveMessage:)]) {
+        return;
+    }
+    
+    dispatch_async(self.delegateQueue, ^{
+        [self.delegate websocket:self didReceiveMessage:message];
+    });
+}
+
+-(void)notifyDelegateDidReceiveData:(NSData *)data {
+    if (![self.delegate respondsToSelector:@selector(websocket:didReceiveData:)]) {
+        return;
+    }
+    
+    dispatch_async(self.delegateQueue, ^{
+        [self.delegate websocket:self didReceiveData:data];
+    });
+    
+}
+
+-(void)notifyDelegateDidReceivePing {
+    if (![self.delegate respondsToSelector:@selector(websocketDidReceivePing:)]) {
+        return;
+    }
+    
+    dispatch_async(self.delegateQueue, ^{
+        [self.delegate websocketDidReceivePing:self];
+    });
+}
+
 /////////////////////////////////////////////////////////////////////////////
 -(void)dealloc
 {
-    if(self.isConnected) {
-        [self disconnect];
-    }
+    [self disconnectStream:nil];
 }
 /////////////////////////////////////////////////////////////////////////////
 @end

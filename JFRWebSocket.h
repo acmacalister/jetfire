@@ -45,6 +45,12 @@
  */
 -(void)websocket:(JFRWebSocket*)socket didReceiveData:(NSData*)data;
 
+/**
+ The websocket got a 'ping' from the server (and replied automatically with a 'pong').
+ @param socket is the current socket object.
+*/
+-(void)websocketDidReceivePing:(JFRWebSocket*)socket;
+
 @end
 
 @interface JFRWebSocket : NSObject
@@ -109,6 +115,7 @@
  Set your own custom queue.
  Default setting is dispatch_get_main_queue.
  */
-@property(nonatomic, strong)dispatch_queue_t queue;
+@property(nonatomic, weak)dispatch_queue_t delegateQueue;
+
 
 @end
