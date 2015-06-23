@@ -245,6 +245,7 @@ static int BUFFER_MAX = 2048;
         [self.inputStream setProperty:settings forKey:key];
         [self.outputStream setProperty:settings forKey:key];
     }
+    self.isRunLoop = YES;
     [self.inputStream scheduleInRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
     [self.outputStream scheduleInRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
     [self.inputStream open];
@@ -254,7 +255,6 @@ static int BUFFER_MAX = 2048;
         [self doWriteError];
         return;
     }
-    self.isRunLoop = YES;
     while (self.isRunLoop) {
         [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate distantFuture]];
     }
