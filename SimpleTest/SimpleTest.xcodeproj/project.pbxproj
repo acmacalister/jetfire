@@ -14,6 +14,7 @@
 		6B22F5D61A9D94C80052A037 /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 6B22F5D51A9D94C80052A037 /* Images.xcassets */; };
 		6B22F5D91A9D94C80052A037 /* LaunchScreen.xib in Resources */ = {isa = PBXBuildFile; fileRef = 6B22F5D71A9D94C80052A037 /* LaunchScreen.xib */; };
 		6B22F5F11A9D967D0052A037 /* JFRWebSocket.m in Sources */ = {isa = PBXBuildFile; fileRef = 6B22F5F01A9D967D0052A037 /* JFRWebSocket.m */; };
+		FC1A3BB71ADC404600F0BDBD /* JFRResponse.m in Sources */ = {isa = PBXBuildFile; fileRef = FC1A3BB61ADC404600F0BDBD /* JFRResponse.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -29,6 +30,8 @@
 		6B22F5D81A9D94C80052A037 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/LaunchScreen.xib; sourceTree = "<group>"; };
 		6B22F5EF1A9D967D0052A037 /* JFRWebSocket.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = JFRWebSocket.h; path = ../../JFRWebSocket.h; sourceTree = "<group>"; };
 		6B22F5F01A9D967D0052A037 /* JFRWebSocket.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = JFRWebSocket.m; path = ../../JFRWebSocket.m; sourceTree = "<group>"; };
+		FC1A3BB51ADC404600F0BDBD /* JFRResponse.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = JFRResponse.h; sourceTree = "<group>"; };
+		FC1A3BB61ADC404600F0BDBD /* JFRResponse.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = JFRResponse.m; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -61,6 +64,7 @@
 		6B22F5C71A9D94C80052A037 /* SimpleTest */ = {
 			isa = PBXGroup;
 			children = (
+				FC1A3BB41ADC404600F0BDBD /* Private */,
 				6B22F5EF1A9D967D0052A037 /* JFRWebSocket.h */,
 				6B22F5F01A9D967D0052A037 /* JFRWebSocket.m */,
 				6B22F5CC1A9D94C80052A037 /* AppDelegate.h */,
@@ -82,6 +86,16 @@
 				6B22F5CA1A9D94C80052A037 /* main.m */,
 			);
 			name = "Supporting Files";
+			sourceTree = "<group>";
+		};
+		FC1A3BB41ADC404600F0BDBD /* Private */ = {
+			isa = PBXGroup;
+			children = (
+				FC1A3BB51ADC404600F0BDBD /* JFRResponse.h */,
+				FC1A3BB61ADC404600F0BDBD /* JFRResponse.m */,
+			);
+			name = Private;
+			path = ../../Private;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -155,6 +169,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				6B22F5D11A9D94C80052A037 /* ViewController.m in Sources */,
+				FC1A3BB71ADC404600F0BDBD /* JFRResponse.m in Sources */,
 				6B22F5CE1A9D94C80052A037 /* AppDelegate.m in Sources */,
 				6B22F5F11A9D967D0052A037 /* JFRWebSocket.m in Sources */,
 				6B22F5CB1A9D94C80052A037 /* main.m in Sources */,
@@ -300,6 +315,7 @@
 				6B22F5EA1A9D94C80052A037 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
 	};
