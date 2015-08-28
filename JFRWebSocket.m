@@ -688,7 +688,9 @@ static int BUFFER_MAX = 2048;
             }
             NSInteger len = [self.outputStream write:([frame bytes]+total) maxLength:(NSInteger)(offset-total)];
             if(len < 0 || len == NSNotFound) {
-                [self doWriteError];
+                dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+                    [self doWriteError];
+                });
                 break;
             } else {
                 total += len;
