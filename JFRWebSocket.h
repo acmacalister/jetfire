@@ -82,6 +82,12 @@
 - (void)writeString:(NSString*)string;
 
 /**
+ write ping to the socket.
+ @param is the binary data to write (if desired).
+ */
+- (void)writePing:(NSData*)data;
+
+/**
  Add a header to send along on the the HTTP connect.
  @param: value is the string to send
  @param: key is the HTTP key name to send
@@ -110,5 +116,25 @@
  Default setting is dispatch_get_main_queue.
  */
 @property(nonatomic, strong)dispatch_queue_t queue;
+
+/**
+ Block property to use on connect.
+ */
+@property(nonatomic, strong)void (^onConnect)(void);
+
+/**
+ Block property to use on disconnect.
+ */
+@property(nonatomic, strong)void (^onDisconnect)(NSError*);
+
+/**
+ Block property to use on receiving data.
+ */
+@property(nonatomic, strong)void (^onData)(NSData*);
+
+/**
+ Block property to use on receiving text.
+ */
+@property(nonatomic, strong)void (^onText)(NSString*);
 
 @end

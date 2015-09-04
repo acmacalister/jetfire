@@ -50,7 +50,13 @@
 }
 
 - (IBAction)disconnect:(UIBarButtonItem *)sender {
-    [self.socket disconnect];
+    if(self.socket.isConnected) {
+        sender.title = @"Connect";
+        [self.socket disconnect];
+    } else {
+        sender.title = @"Disconnect";
+        [self.socket connect];
+    }
 }
 
 @end

@@ -9,14 +9,6 @@
 
 #import "JFRWebSocket.h"
 
-//this get the correct bits out by masking the bytes of the buffer.
-static const uint8_t JFRFinMask             = 0x80;
-static const uint8_t JFROpCodeMask          = 0x0F;
-static const uint8_t JFRRSVMask             = 0x70;
-static const uint8_t JFRMaskMask            = 0x80;
-static const uint8_t JFRPayloadLenMask      = 0x7F;
-static const size_t  JFRMaxFrameSize        = 32;
-
 //get the opCode from the packet
 typedef NS_ENUM(NSUInteger, JFROpCode) {
     JFROpCodeContinueFrame = 0x0,
@@ -40,6 +32,11 @@ typedef NS_ENUM(NSUInteger, JFRCloseCode) {
     JFRCloseCodeEncoding               = 1007,
     JFRCloseCodePolicyViolated         = 1008,
     JFRCloseCodeMessageTooBig          = 1009
+};
+
+typedef NS_ENUM(NSUInteger, JFRInternalErrorCode) {
+    // 0-999 WebSocket status codes not used
+    JFROutputStreamWriteError  = 1
 };
 
 //holds the responses in our read stack to properly process messages
@@ -66,6 +63,7 @@ typedef NS_ENUM(NSUInteger, JFRCloseCode) {
 @property(nonatomic, strong)NSMutableDictionary *headers;
 @property(nonatomic, strong)NSArray *optProtocols;
 @property(nonatomic, assign)BOOL isCreated;
+@property(nonatomic, assign)BOOL didDisconnect;
 
 @end
 
@@ -84,7 +82,15 @@ static NSString *const headerWSAcceptName      = @"Sec-WebSocket-Accept";
 
 //Class Constants
 static char CRLFBytes[] = {'\r', '\n', '\r', '\n'};
-static int BUFFER_MAX = 2048;
+static int BUFFER_MAX = 4096;
+
+// This get the correct bits out by masking the bytes of the buffer.
+static const uint8_t JFRFinMask             = 0x80;
+static const uint8_t JFROpCodeMask          = 0x0F;
+static const uint8_t JFRRSVMask             = 0x70;
+static const uint8_t JFRMaskMask            = 0x80;
+static const uint8_t JFRPayloadLenMask      = 0x7F;
+static const size_t  JFRMaxFrameSize        = 32;
 
 @implementation JFRWebSocket
 
@@ -106,40 +112,44 @@ static int BUFFER_MAX = 2048;
 }
 /////////////////////////////////////////////////////////////////////////////
 //Exposed method for connecting to URL provided in init method.
-- (void)connect
-{
+- (void)connect {
     if(self.isCreated) {
         return;
     }
     
+    __weak typeof(self) weakSelf = self;
+    dispatch_async(self.queue, ^{
+        weakSelf.didDisconnect = NO;
+    });
+
     //everything is on a background thread.
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        self.isCreated = YES;
-        [self createHTTPRequest];
-        self.isCreated = NO;
+        weakSelf.isCreated = YES;
+        [weakSelf createHTTPRequest];
+        weakSelf.isCreated = NO;
     });
 }
 /////////////////////////////////////////////////////////////////////////////
-- (void)disconnect
-{
+- (void)disconnect {
     [self writeError:JFRCloseCodeNormal];
 }
 /////////////////////////////////////////////////////////////////////////////
--(void)writeString:(NSString*)string
-{
+- (void)writeString:(NSString*)string {
     if(string) {
         [self dequeueWrite:[string dataUsingEncoding:NSUTF8StringEncoding]
                   withCode:JFROpCodeTextFrame];
     }
 }
 /////////////////////////////////////////////////////////////////////////////
--(void)writeData:(NSData*)data
-{
+- (void)writePing:(NSData*)data {
+    [self dequeueWrite:data withCode:JFROpCodePing];
+}
+/////////////////////////////////////////////////////////////////////////////
+- (void)writeData:(NSData*)data {
     [self dequeueWrite:data withCode:JFROpCodeBinaryFrame];
 }
 /////////////////////////////////////////////////////////////////////////////
-- (void)addHeader:(NSString*)value forKey:(NSString*)key
-{
+- (void)addHeader:(NSString*)value forKey:(NSString*)key {
     if(!self.headers) {
         self.headers = [[NSMutableDictionary alloc] init];
     }
@@ -151,8 +161,7 @@ static int BUFFER_MAX = 2048;
 
 /////////////////////////////////////////////////////////////////////////////
 //Uses CoreFoundation to build a HTTP request to send over TCP stream.
-- (void)createHTTPRequest
-{
+- (void)createHTTPRequest {
     CFURLRef url = CFURLCreateWithString(kCFAllocatorDefault, (CFStringRef)self.url.absoluteString, NULL);
     CFStringRef requestMethod = CFSTR("GET");
     CFHTTPMessageRef urlRequest = CFHTTPMessageCreateRequest(kCFAllocatorDefault,
@@ -207,8 +216,7 @@ static int BUFFER_MAX = 2048;
 }
 /////////////////////////////////////////////////////////////////////////////
 //Random String of 16 lowercase chars, SHA1 and base64 encoded.
-- (NSString *)generateWebSocketKey
-{
+- (NSString*)generateWebSocketKey {
     NSInteger seed = 16;
     NSMutableString *string = [NSMutableString stringWithCapacity:seed];
     for (int i = 0; i < seed; i++) {
@@ -218,8 +226,7 @@ static int BUFFER_MAX = 2048;
 }
 /////////////////////////////////////////////////////////////////////////////
 //Sets up our reader/writer for the TCP stream.
-- (void)initStreamsWithData:(NSData *)data port:(NSNumber*)port
-{
+- (void)initStreamsWithData:(NSData*)data port:(NSNumber*)port {
     CFReadStreamRef readStream = NULL;
     CFWriteStreamRef writeStream = NULL;
     CFStreamCreatePairWithSocketToHost(NULL, (__bridge CFStringRef)self.url.host, [port intValue], &readStream, &writeStream);
@@ -250,11 +257,7 @@ static int BUFFER_MAX = 2048;
     [self.outputStream scheduleInRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
     [self.inputStream open];
     [self.outputStream open];
-    NSInteger len = [self.outputStream write:[data bytes] maxLength:[data length]];
-    if(len < 0 || len == NSNotFound) {
-        [self doWriteError];
-        return;
-    }
+    [self.outputStream write:[data bytes] maxLength:[data length]];
     while (self.isRunLoop) {
         [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate distantFuture]];
     }
@@ -264,8 +267,7 @@ static int BUFFER_MAX = 2048;
 #pragma mark - NSStreamDelegate
 
 /////////////////////////////////////////////////////////////////////////////
-- (void)stream:(NSStream *)aStream handleEvent:(NSStreamEvent)eventCode
-{
+- (void)stream:(NSStream *)aStream handleEvent:(NSStreamEvent)eventCode {
     switch (eventCode) {
         case NSStreamEventNone:
             break;
@@ -295,8 +297,7 @@ static int BUFFER_MAX = 2048;
     }
 }
 /////////////////////////////////////////////////////////////////////////////
--(void)disconnectStream:(NSError*)error
-{
+- (void)disconnectStream:(NSError*)error {
     [self.writeQueue waitUntilAllOperationsAreFinished];
     [self.inputStream removeFromRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
     [self.outputStream removeFromRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
@@ -306,29 +307,22 @@ static int BUFFER_MAX = 2048;
     self.inputStream = nil;
     self.isRunLoop = NO;
     _isConnected = NO;
-    
-    if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)]) {
-        dispatch_async(self.queue,^{
-            [self.delegate websocketDidDisconnect:self error:error];
-        });
-    }
+    [self doDisconnect:error];
 }
 /////////////////////////////////////////////////////////////////////////////
 
 #pragma mark - Stream Processing Methods
 
 /////////////////////////////////////////////////////////////////////////////
-- (void)processInputStream
-{
+- (void)processInputStream {
     @autoreleasepool {
         uint8_t buffer[BUFFER_MAX];
         NSInteger length = [self.inputStream read:buffer maxLength:BUFFER_MAX];
         if(length > 0) {
             if(!self.isConnected) {
-                _isConnected = [self processHTTP:buffer length:length];
-                if(!self.isConnected) {
-                    if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)])
-                        [self.delegate websocketDidDisconnect:self error:[self errorWithDetail:@"Invalid HTTP upgrade" code:1]];
+                BOOL status = [self processHTTP:buffer length:length];
+                if(!status) {
+                    [self doDisconnect:[self errorWithDetail:@"Invalid HTTP upgrade" code:1]];
                 }
             } else {
                 BOOL process = NO;
@@ -344,8 +338,7 @@ static int BUFFER_MAX = 2048;
     }
 }
 /////////////////////////////////////////////////////////////////////////////
--(void)dequeueInput
-{
+- (void)dequeueInput {
     if(self.inputQueue.count > 0) {
         NSData *data = [self.inputQueue objectAtIndex:0];
         NSData *work = data;
@@ -362,8 +355,7 @@ static int BUFFER_MAX = 2048;
 }
 /////////////////////////////////////////////////////////////////////////////
 //Finds the HTTP Packet in the TCP stream, by looking for the CRLF.
-- (BOOL)processHTTP:(uint8_t*)buffer length:(NSInteger)bufferLen
-{
+- (BOOL)processHTTP:(uint8_t*)buffer length:(NSInteger)bufferLen {
     int k = 0;
     NSInteger totalSize = 0;
     for(int i = 0; i < bufferLen; i++) {
@@ -378,12 +370,15 @@ static int BUFFER_MAX = 2048;
         }
     }
     if(totalSize > 0) {
-        
-        if([self validateResponse:buffer length:totalSize])
-        {
+        if([self validateResponse:buffer length:totalSize]) {
             if([self.delegate respondsToSelector:@selector(websocketDidConnect:)]) {
+                __weak typeof(self) weakSelf = self;
                 dispatch_async(self.queue,^{
-                    [self.delegate websocketDidConnect:self];
+                    _isConnected = YES;
+                    [weakSelf.delegate websocketDidConnect:self];
+                    if(weakSelf.onConnect) {
+                        weakSelf.onConnect();
+                    }
                 });
             }
             totalSize += 1; //skip the last \n
@@ -398,8 +393,7 @@ static int BUFFER_MAX = 2048;
 }
 /////////////////////////////////////////////////////////////////////////////
 //Validate the HTTP is a 101, as per the RFC spec.
-- (BOOL)validateResponse:(uint8_t *)buffer length:(NSInteger)bufferLen
-{
+- (BOOL)validateResponse:(uint8_t *)buffer length:(NSInteger)bufferLen {
     CFHTTPMessageRef response = CFHTTPMessageCreateEmpty(kCFAllocatorDefault, NO);
     CFHTTPMessageAppendBytes(response, buffer, bufferLen);
     if(CFHTTPMessageGetResponseStatusCode(response) != 101) {
@@ -415,15 +409,7 @@ static int BUFFER_MAX = 2048;
     return NO;
 }
 /////////////////////////////////////////////////////////////////////////////
--(void)writeError:(uint16_t)code
-{
-    uint16_t buffer[1];
-    buffer[0] = CFSwapInt16BigToHost(code);
-    [self dequeueWrite:[NSData dataWithBytes:buffer length:sizeof(uint16_t)] withCode:JFROpCodeConnectionClose];
-}
-/////////////////////////////////////////////////////////////////////////////
--(void)processRawMessage:(uint8_t*)buffer length:(NSInteger)bufferLen
-{
+-(void)processRawMessage:(uint8_t*)buffer length:(NSInteger)bufferLen {
     JFRResponse *response = [self.readStack lastObject];
     if(response && bufferLen < 2) {
         self.fragBuffer = [NSData dataWithBytes:buffer length:bufferLen];
@@ -443,6 +429,7 @@ static int BUFFER_MAX = 2048;
         if(extra > 0) {
             [self processExtra:(buffer+offset) length:extra];
         }
+        return;
     } else {
         if(bufferLen < 2) { // we need at least 2 bytes for the header
             self.fragBuffer = [NSData dataWithBytes:buffer length:bufferLen];
@@ -454,24 +441,18 @@ static int BUFFER_MAX = 2048;
         uint8_t payloadLen = (JFRPayloadLenMask & buffer[1]);
         NSInteger offset = 2; //how many bytes do we need to skip for the header
         if((isMasked  || (JFRRSVMask & buffer[0])) && receivedOpcode != JFROpCodePong) {
-            if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)]) {
-                [self.delegate websocketDidDisconnect:self error:[self errorWithDetail:@"masked and rsv data is not currently supported" code:JFRCloseCodeProtocolError]];
-            }
+            [self doDisconnect:[self errorWithDetail:@"masked and rsv data is not currently supported" code:JFRCloseCodeProtocolError]];
             [self writeError:JFRCloseCodeProtocolError];
             return;
         }
-        BOOL isControlFrame = (receivedOpcode == JFROpCodeConnectionClose || receivedOpcode == JFROpCodePing); //|| receivedOpcode == JFROpCodePong
+        BOOL isControlFrame = (receivedOpcode == JFROpCodeConnectionClose || receivedOpcode == JFROpCodePing);
         if(!isControlFrame && (receivedOpcode != JFROpCodeBinaryFrame && receivedOpcode != JFROpCodeContinueFrame && receivedOpcode != JFROpCodeTextFrame && receivedOpcode != JFROpCodePong)) {
-            if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)]) {
-                [self.delegate websocketDidDisconnect:self error:[self errorWithDetail:[NSString stringWithFormat:@"unknown opcode: 0x%x",receivedOpcode] code:JFRCloseCodeProtocolError]];
-            }
+            [self doDisconnect:[self errorWithDetail:[NSString stringWithFormat:@"unknown opcode: 0x%x",receivedOpcode] code:JFRCloseCodeProtocolError]];
             [self writeError:JFRCloseCodeProtocolError];
             return;
         }
         if(isControlFrame && !isFin) {
-            if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)]) {
-                [self.delegate websocketDidDisconnect:self error:[self errorWithDetail:@"control frames can't be fragmented" code:JFRCloseCodeProtocolError]];
-            }
+            [self doDisconnect:[self errorWithDetail:@"control frames can't be fragmented" code:JFRCloseCodeProtocolError]];
             [self writeError:JFRCloseCodeProtocolError];
             return;
         }
@@ -488,18 +469,19 @@ static int BUFFER_MAX = 2048;
                 }
                 offset += 2;
             }
-            NSInteger len = payloadLen-2;
-            if(len > 0) {
-                NSData *data = [NSData dataWithBytes:(buffer+offset) length:len];
-                NSString *str = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-                if(!str) {
-                    code = JFRCloseCodeProtocolError;
+            
+            if(payloadLen > 2) {
+                NSInteger len = payloadLen-2;
+                if(len > 0) {
+                    NSData *data = [NSData dataWithBytes:(buffer+offset) length:len];
+                    NSString *str = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+                    if(!str) {
+                        code = JFRCloseCodeProtocolError;
+                    }
                 }
             }
             [self writeError:code];
-            if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)]) {
-                [self.delegate websocketDidDisconnect:self error:[self errorWithDetail:@"continue frame before a binary or text frame" code:code]];
-            }
+            [self doDisconnect:[self errorWithDetail:@"continue frame before a binary or text frame" code:code]];
             return;
         }
         if(isControlFrame && payloadLen > 125) {
@@ -519,7 +501,7 @@ static int BUFFER_MAX = 2048;
             return;
         }
         NSInteger len = dataLength;
-        if(dataLength > (bufferLen-offset)) {
+        if(dataLength > (bufferLen-offset) || (bufferLen - offset) < dataLength) {
             len = bufferLen-offset;
         }
         NSData *data = nil;
@@ -542,18 +524,14 @@ static int BUFFER_MAX = 2048;
             response = nil; //don't append pings
         }
         if(!isFin && receivedOpcode == JFROpCodeContinueFrame && !response) {
-            if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)]) {
-                [self.delegate websocketDidDisconnect:self error:[self errorWithDetail:@"continue frame before a binary or text frame" code:JFRCloseCodeProtocolError]];
-            }
+            [self doDisconnect:[self errorWithDetail:@"continue frame before a binary or text frame" code:JFRCloseCodeProtocolError]];
             [self writeError:JFRCloseCodeProtocolError];
             return;
         }
         BOOL isNew = NO;
         if(!response) {
             if(receivedOpcode == JFROpCodeContinueFrame) {
-                if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)]) {
-                    [self.delegate websocketDidDisconnect:self error:[self errorWithDetail:@"first frame can't be a continue frame" code:JFRCloseCodeProtocolError]];
-                }
+                [self doDisconnect:[self errorWithDetail:@"first frame can't be a continue frame" code:JFRCloseCodeProtocolError]];
                 [self writeError:JFRCloseCodeProtocolError];
                 return;
             }
@@ -566,9 +544,7 @@ static int BUFFER_MAX = 2048;
             if(receivedOpcode == JFROpCodeContinueFrame) {
                 response.bytesLeft = dataLength;
             } else {
-                if([self.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)]) {
-                    [self.delegate websocketDidDisconnect:self error:[self errorWithDetail:@"second and beyond of fragment message must be a continue frame" code:JFRCloseCodeProtocolError]];
-                }
+                [self doDisconnect:[self errorWithDetail:@"second and beyond of fragment message must be a continue frame" code:JFRCloseCodeProtocolError]];
                 [self writeError:JFRCloseCodeProtocolError];
                 return;
             }
@@ -591,8 +567,7 @@ static int BUFFER_MAX = 2048;
     
 }
 /////////////////////////////////////////////////////////////////////////////
--(void)processExtra:(uint8_t*)buffer length:(NSInteger)bufferLen
-{
+- (void)processExtra:(uint8_t*)buffer length:(NSInteger)bufferLen {
     if(bufferLen < 2) {
         self.fragBuffer = [NSData dataWithBytes:buffer length:bufferLen];
     } else {
@@ -600,8 +575,7 @@ static int BUFFER_MAX = 2048;
     }
 }
 /////////////////////////////////////////////////////////////////////////////
--(BOOL)processResponse:(JFRResponse*)response
-{
+- (BOOL)processResponse:(JFRResponse*)response {
     if(response.isFin && response.bytesLeft <= 0) {
         NSData *data = response.buffer;
         if(response.code == JFROpCodePing) {
@@ -612,14 +586,24 @@ static int BUFFER_MAX = 2048;
                 [self writeError:JFRCloseCodeEncoding];
                 return NO;
             }
-            if([self.delegate respondsToSelector:@selector(websocket:didReceiveMessage:)]) {
-                dispatch_async(self.queue,^{
-                    [self.delegate websocket:self didReceiveMessage:str];
-                });
-            }
-        } else if([self.delegate respondsToSelector:@selector(websocket:didReceiveData:)]) {
+            __weak typeof(self) weakSelf = self;
             dispatch_async(self.queue,^{
-                [self.delegate websocket:self didReceiveData:data];
+                if([weakSelf.delegate respondsToSelector:@selector(websocket:didReceiveMessage:)]) {
+                    [weakSelf.delegate websocket:weakSelf didReceiveMessage:str];
+                }
+                if(weakSelf.onText) {
+                    weakSelf.onText(str);
+                }
+            });
+        } else if(response.code == JFROpCodeBinaryFrame) {
+            __weak typeof(self) weakSelf = self;
+            dispatch_async(self.queue,^{
+                if([weakSelf.delegate respondsToSelector:@selector(websocket:didReceiveData:)]) {
+                    [weakSelf.delegate websocket:weakSelf didReceiveData:data];
+                }
+                if(weakSelf.onData) {
+                    weakSelf.onData(data);
+                }
             });
         }
         [self.readStack removeLastObject];
@@ -628,32 +612,27 @@ static int BUFFER_MAX = 2048;
     return NO;
 }
 /////////////////////////////////////////////////////////////////////////////
--(BOOL)processCloseCode:(uint16_t)code
-{
-    if(code > 0) {
-        [self writeError:code];
-        return YES;
-    }
-    return NO;
-}
-/////////////////////////////////////////////////////////////////////////////
--(void)dequeueWrite:(NSData*)data withCode:(JFROpCode)code
-{
+-(void)dequeueWrite:(NSData*)data withCode:(JFROpCode)code {
     if(!self.writeQueue) {
         self.writeQueue = [[NSOperationQueue alloc] init];
         self.writeQueue.maxConcurrentOperationCount = 1;
     }
-    //we have a queue so we can be thread safe.
+    
+    __weak typeof(self) weakSelf = self;
     [self.writeQueue addOperationWithBlock:^{
+        typeof(weakSelf) strongSelf = weakSelf;
         //stream isn't ready, let's wait
         int tries = 0;
-        while(!self.outputStream || !self.isConnected) {
+        while(!strongSelf.outputStream || !strongSelf.isConnected) {
             if(tries < 5) {
                 sleep(1);
             } else {
                 break;
             }
             tries++;
+        }
+        if(!strongSelf.isConnected) {
+            return;
         }
         uint64_t offset = 2; //how many bytes do we need to skip for the header
         uint8_t *bytes = (uint8_t*)[data bytes];
@@ -691,14 +670,16 @@ static int BUFFER_MAX = 2048;
         }
         uint64_t total = 0;
         while (true) {
-            if(!self.outputStream) {
+            if(!strongSelf.outputStream) {
                 break;
             }
-            NSInteger len = [self.outputStream write:([frame bytes]+total) maxLength:(NSInteger)(offset-total)];
+            NSInteger len = [strongSelf.outputStream write:([frame bytes]+total) maxLength:(NSInteger)(offset-total)];
             if(len < 0 || len == NSNotFound) {
-                dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-                    [self doWriteError];
-                });
+                NSError *error = strongSelf.outputStream.streamError;
+                if(!error) {
+                    error = [strongSelf errorWithDetail:@"output stream error during write" code:JFROutputStreamWriteError];
+                }
+                [strongSelf doDisconnect:error];
                 break;
             } else {
                 total += len;
@@ -710,27 +691,33 @@ static int BUFFER_MAX = 2048;
     }];
 }
 /////////////////////////////////////////////////////////////////////////////
--(void)doWriteError
-{
-    NSError *error = [self.outputStream streamError];
-    if(!error) {
-        error = [self errorWithDetail:@"output stream error during write" code:2];
+- (void)doDisconnect:(NSError*)error {
+    if(!self.didDisconnect) {
+        __weak typeof(self) weakSelf = self;
+        dispatch_async(self.queue, ^{
+            weakSelf.didDisconnect = YES;
+            [weakSelf disconnect];
+            if([weakSelf.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)]) {
+                [weakSelf.delegate websocketDidDisconnect:weakSelf error:error];
+            }
+        });
     }
-    
-    dispatch_async(self.queue,^{
-        [self disconnectStream:error];
-    });
 }
 /////////////////////////////////////////////////////////////////////////////
--(NSError*)errorWithDetail:(NSString*)detail code:(NSInteger)code
+- (NSError*)errorWithDetail:(NSString*)detail code:(NSInteger)code
 {
     NSMutableDictionary* details = [NSMutableDictionary dictionary];
     [details setValue:detail forKey:NSLocalizedDescriptionKey];
     return [[NSError alloc] initWithDomain:@"JFRWebSocket" code:code userInfo:details];
 }
 /////////////////////////////////////////////////////////////////////////////
--(void)dealloc
-{
+- (void)writeError:(uint16_t)code {
+    uint16_t buffer[1];
+    buffer[0] = CFSwapInt16BigToHost(code);
+    [self dequeueWrite:[NSData dataWithBytes:buffer length:sizeof(uint16_t)] withCode:JFROpCodeConnectionClose];
+}
+/////////////////////////////////////////////////////////////////////////////
+- (void)dealloc {
     if(self.isConnected) {
         [self disconnect];
     }

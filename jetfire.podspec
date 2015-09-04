@@ -8,7 +8,7 @@ Pod::Spec.new do |s|
   s.social_media_url = 'http://twitter.com/daltoniam'
   s.source       = { :git => "https://github.com/acmacalister/jetfire.git", :tag => "#{s.version}" }
   s.ios.deployment_target = '6.0'
-  s.osx.deployment_target = '10.7'
+  s.osx.deployment_target = '10.8'
   s.source_files = '*.{h,m}'
   s.requires_arc = true
 end
