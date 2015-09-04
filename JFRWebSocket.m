@@ -706,7 +706,10 @@ static int BUFFER_MAX = 2048;
     if(!error) {
         error = [self errorWithDetail:@"output stream error during write" code:2];
     }
-    [self disconnectStream:error];
+    
+    dispatch_async(self.queue,^{
+        [self disconnectStream:error];
+    });
 }
 /////////////////////////////////////////////////////////////////////////////
 -(NSError*)errorWithDetail:(NSString*)detail code:(NSInteger)code
