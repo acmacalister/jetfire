@@ -444,6 +444,10 @@ static int BUFFER_MAX = 2048;
             [self processExtra:(buffer+offset) length:extra];
         }
     } else {
+        if(bufferLen < 2) { // we need at least 2 bytes for the header
+            self.fragBuffer = [NSData dataWithBytes:buffer length:bufferLen];
+            return;
+        }
         BOOL isFin = (JFRFinMask & buffer[0]);
         uint8_t receivedOpcode = (JFROpCodeMask & buffer[0]);
         BOOL isMasked = (JFRMaskMask & buffer[1]);
@@ -510,8 +514,12 @@ static int BUFFER_MAX = 2048;
             dataLength = CFSwapInt16BigToHost(*(uint16_t *)(buffer+offset) );
             offset += sizeof(uint16_t);
         }
+        if(bufferLen < offset) { // we cannot process this yet, nead more header data
+            self.fragBuffer = [NSData dataWithBytes:buffer length:bufferLen];
+            return;
+        }
         NSInteger len = dataLength;
-        if(dataLength > bufferLen) {
+        if(dataLength > (bufferLen-offset)) {
             len = bufferLen-offset;
         }
         NSData *data = nil;
@@ -688,7 +696,9 @@ static int BUFFER_MAX = 2048;
             }
             NSInteger len = [self.outputStream write:([frame bytes]+total) maxLength:(NSInteger)(offset-total)];
             if(len < 0 || len == NSNotFound) {
-                [self doWriteError];
+                dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+                    [self doWriteError];
+                });
                 break;
             } else {
                 total += len;
