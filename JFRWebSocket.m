@@ -613,6 +613,9 @@ static const size_t  JFRMaxFrameSize        = 32;
 }
 /////////////////////////////////////////////////////////////////////////////
 -(void)dequeueWrite:(NSData*)data withCode:(JFROpCode)code {
+    if(!self.isConnected) {
+        return;
+    }
     if(!self.writeQueue) {
         self.writeQueue = [[NSOperationQueue alloc] init];
         self.writeQueue.maxConcurrentOperationCount = 1;
@@ -620,20 +623,10 @@ static const size_t  JFRMaxFrameSize        = 32;
     
     __weak typeof(self) weakSelf = self;
     [self.writeQueue addOperationWithBlock:^{
-        typeof(weakSelf) strongSelf = weakSelf;
-        //stream isn't ready, let's wait
-        int tries = 0;
-        while(!strongSelf.outputStream || !strongSelf.isConnected) {
-            if(tries < 5) {
-                sleep(1);
-            } else {
-                break;
-            }
-            tries++;
-        }
-        if(!strongSelf.isConnected) {
+        if(!weakSelf || !weakSelf.isConnected) {
             return;
         }
+        typeof(weakSelf) strongSelf = weakSelf;
         uint64_t offset = 2; //how many bytes do we need to skip for the header
         uint8_t *bytes = (uint8_t*)[data bytes];
         uint64_t dataLength = data.length;
@@ -670,7 +663,7 @@ static const size_t  JFRMaxFrameSize        = 32;
         }
         uint64_t total = 0;
         while (true) {
-            if(!strongSelf.outputStream) {
+            if(!strongSelf.isConnected || !strongSelf.outputStream) {
                 break;
             }
             NSInteger len = [strongSelf.outputStream write:([frame bytes]+total) maxLength:(NSInteger)(offset-total)];
