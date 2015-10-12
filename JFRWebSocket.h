@@ -8,6 +8,7 @@
 /////////////////////////////////////////////////////////////////////////////
 
 #import <Foundation/Foundation.h>
+#import "JFRSecurity.h"
 
 @class JFRWebSocket;
 
@@ -110,6 +111,11 @@
  Default setting is No.
  */
 @property(nonatomic, assign)BOOL selfSignedSSL;
+
+/**
+ Use for SSL pinning.
+ */
+@property(nonatomic)JFRSecurity *security;
 
 /**
  Set your own custom queue.

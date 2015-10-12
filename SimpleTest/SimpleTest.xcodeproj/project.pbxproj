@@ -7,17 +7,19 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		5CD0D3E01BCC397500266A6D /* JFRWebSocket.m in Sources */ = {isa = PBXBuildFile; fileRef = 6B22F5F01A9D967D0052A037 /* JFRWebSocket.m */; };
+		5CD0D3E41BCC39C600266A6D /* JFRSecurity.m in Sources */ = {isa = PBXBuildFile; fileRef = 5CD0D3E31BCC39C600266A6D /* JFRSecurity.m */; settings = {ASSET_TAGS = (); }; };
 		6B22F5CB1A9D94C80052A037 /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 6B22F5CA1A9D94C80052A037 /* main.m */; };
 		6B22F5CE1A9D94C80052A037 /* AppDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = 6B22F5CD1A9D94C80052A037 /* AppDelegate.m */; };
 		6B22F5D11A9D94C80052A037 /* ViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 6B22F5D01A9D94C80052A037 /* ViewController.m */; };
 		6B22F5D41A9D94C80052A037 /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 6B22F5D21A9D94C80052A037 /* Main.storyboard */; };
 		6B22F5D61A9D94C80052A037 /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 6B22F5D51A9D94C80052A037 /* Images.xcassets */; };
 		6B22F5D91A9D94C80052A037 /* LaunchScreen.xib in Resources */ = {isa = PBXBuildFile; fileRef = 6B22F5D71A9D94C80052A037 /* LaunchScreen.xib */; };
-		6B22F5F11A9D967D0052A037 /* JFRWebSocket.m in Sources */ = {isa = PBXBuildFile; fileRef = 6B22F5F01A9D967D0052A037 /* JFRWebSocket.m */; };
-		D95256871B9A4FCC004CB6FC /* JFRSecurity.m in Sources */ = {isa = PBXBuildFile; fileRef = D95256861B9A4FCC004CB6FC /* JFRSecurity.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		5CD0D3E21BCC39C600266A6D /* JFRSecurity.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = JFRSecurity.h; path = ../../JFRSecurity.h; sourceTree = "<group>"; };
+		5CD0D3E31BCC39C600266A6D /* JFRSecurity.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = JFRSecurity.m; path = ../../JFRSecurity.m; sourceTree = "<group>"; };
 		6B22F5C51A9D94C80052A037 /* SimpleTest.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SimpleTest.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		6B22F5C91A9D94C80052A037 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		6B22F5CA1A9D94C80052A037 /* main.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = "<group>"; };
@@ -30,8 +32,6 @@
 		6B22F5D81A9D94C80052A037 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/LaunchScreen.xib; sourceTree = "<group>"; };
 		6B22F5EF1A9D967D0052A037 /* JFRWebSocket.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = JFRWebSocket.h; path = ../../JFRWebSocket.h; sourceTree = "<group>"; };
 		6B22F5F01A9D967D0052A037 /* JFRWebSocket.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = JFRWebSocket.m; path = ../../JFRWebSocket.m; sourceTree = "<group>"; };
-		D95256851B9A4FCC004CB6FC /* JFRSecurity.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = JFRSecurity.h; sourceTree = "<group>"; };
-		D95256861B9A4FCC004CB6FC /* JFRSecurity.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = JFRSecurity.m; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -64,8 +64,8 @@
 		6B22F5C71A9D94C80052A037 /* SimpleTest */ = {
 			isa = PBXGroup;
 			children = (
-				D95256851B9A4FCC004CB6FC /* JFRSecurity.h */,
-				D95256861B9A4FCC004CB6FC /* JFRSecurity.m */,
+				5CD0D3E21BCC39C600266A6D /* JFRSecurity.h */,
+				5CD0D3E31BCC39C600266A6D /* JFRSecurity.m */,
 				6B22F5EF1A9D967D0052A037 /* JFRWebSocket.h */,
 				6B22F5F01A9D967D0052A037 /* JFRWebSocket.m */,
 				6B22F5CC1A9D94C80052A037 /* AppDelegate.h */,
@@ -159,10 +159,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5CD0D3E01BCC397500266A6D /* JFRWebSocket.m in Sources */,
+				5CD0D3E41BCC39C600266A6D /* JFRSecurity.m in Sources */,
 				6B22F5D11A9D94C80052A037 /* ViewController.m in Sources */,
-				D95256871B9A4FCC004CB6FC /* JFRSecurity.m in Sources */,
 				6B22F5CE1A9D94C80052A037 /* AppDelegate.m in Sources */,
-				6B22F5F11A9D967D0052A037 /* JFRWebSocket.m in Sources */,
 				6B22F5CB1A9D94C80052A037 /* main.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

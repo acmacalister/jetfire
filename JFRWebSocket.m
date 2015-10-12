@@ -69,6 +69,7 @@ typedef NS_ENUM(NSUInteger, JFRInternalHTTPStatus) {
 @property(nonatomic, strong)NSArray *optProtocols;
 @property(nonatomic, assign)BOOL isCreated;
 @property(nonatomic, assign)BOOL didDisconnect;
+@property(nonatomic, assign)BOOL certValidated;
 
 @end
 
@@ -104,6 +105,7 @@ static const size_t  JFRMaxFrameSize        = 32;
 - (instancetype)initWithURL:(NSURL *)url protocols:(NSArray*)protocols
 {
     if(self = [super init]) {
+        self.certValidated = NO;
         self.voipEnabled = NO;
         self.selfSignedSSL = NO;
         self.queue = dispatch_get_main_queue();
@@ -243,6 +245,8 @@ static const size_t  JFRMaxFrameSize        = 32;
     if([self.url.scheme isEqualToString:@"wss"] || [self.url.scheme isEqualToString:@"https"]) {
         [self.inputStream setProperty:NSStreamSocketSecurityLevelNegotiatedSSL forKey:NSStreamSocketSecurityLevelKey];
         [self.outputStream setProperty:NSStreamSocketSecurityLevelNegotiatedSSL forKey:NSStreamSocketSecurityLevelKey];
+    } else {
+        self.certValidated = YES; //not a https session, so no need to check SSL pinning
     }
     if(self.voipEnabled) {
         [self.inputStream setProperty:NSStreamNetworkServiceTypeVoIP forKey:NSStreamNetworkServiceType];
@@ -273,6 +277,16 @@ static const size_t  JFRMaxFrameSize        = 32;
 
 /////////////////////////////////////////////////////////////////////////////
 - (void)stream:(NSStream *)aStream handleEvent:(NSStreamEvent)eventCode {
+    if(self.security && !self.certValidated && (eventCode == NSStreamEventHasBytesAvailable || eventCode == NSStreamEventHasSpaceAvailable)) {
+        SecTrustRef trust = (__bridge SecTrustRef)([aStream propertyForKey:(__bridge_transfer NSString *)kCFStreamPropertySSLPeerTrust]);
+        NSString *domain = [aStream propertyForKey:(__bridge_transfer NSString *)kCFStreamSSLPeerName];
+        if([self.security isValid:trust domain:domain]) {
+            self.certValidated = YES;
+        } else {
+            [self disconnectStream:[self errorWithDetail:@"Invalid SSL certificate" code:1]];
+            return;
+        }
+    }
     switch (eventCode) {
         case NSStreamEventNone:
             break;
@@ -312,6 +326,7 @@ static const size_t  JFRMaxFrameSize        = 32;
     self.inputStream = nil;
     self.isRunLoop = NO;
     _isConnected = NO;
+    self.certValidated = NO;
     [self doDisconnect:error];
 }
 /////////////////////////////////////////////////////////////////////////////
