@@ -54,9 +54,6 @@ After you are connected, there are some delegate methods that we need to impleme
 ```objc
 -(void)websocket:(JFRWebSocket*)socket didReceiveMessage:(NSString*)string {
     NSLog(@"got some text: %@",string);
-    dispatch_async(dispatch_get_main_queue(),^{
-	//do some UI work
-    });
 }
 ```
 
@@ -66,6 +63,30 @@ After you are connected, there are some delegate methods that we need to impleme
 -(void)websocket:(JFRWebSocket*)socket didReceiveData:(NSData*)data {
     NSLog(@"got some binary data: %d",data.length);
 }
+```
+
+Or you can use blocks.
+
+```objc
+self.socket = [[JFRWebSocket alloc] initWithURL:[NSURL URLWithString:@"ws://localhost:8080"] protocols:@[@"chat",@"superchat"]];
+//websocketDidConnect
+socket.onConnect = ^{
+    println("websocket is connected")
+};
+//websocketDidDisconnect
+socket.onDisconnect = ^(NSError *error) { 
+    NSLog(@"websocket is disconnected: %@",[error localizedDescription]);
+};
+//websocketDidReceiveMessage
+socket.onText = ^(NSString *text) { 
+    NSLog(@"got some text: %@",string);
+};
+//websocketDidReceiveData
+socket.onData = ^(NSData *data) {
+     NSLog(@"got some binary data: %d",data.length);
+};
+//you could do onPong as well.
+[socket connect];
 ```
 
 The delegate methods give you a simple way to handle data from the server, but how do you send data?
@@ -131,6 +152,29 @@ self.socket.voipEnabled = YES;
 
 //set this you want to ignore SSL cert validation, so a self signed SSL certificate can be used.
 self.socket.selfSignedSSL = YES;
+```
+
+### SSL Pinning
+
+SSL Pinning is also supported in Jetfire. 
+
+```objc
+self.socket = [[JFRWebSocket alloc] initWithURL:[NSURL URLWithString:@"ws://localhost:8080"] protocols:@[@"chat",@"superchat"]];
+NSData *data = ... //load your certificate from disk
+so
+self.socket.security = [[JFRSecurity alloc] initWithCerts:@[[[JFRSSLCert alloc] initWithData:data]] publicKeys:YES];
+//self.socket.security = [[JFRSecurity alloc] initUsingPublicKeys:YES]; //uses the .cer files in your app's bundle
+```
+You load either a `NSData` blob of your certificate or you can use a `SecKeyRef` if you have a public key you want to use. The `usePublicKeys` bool is whether to use the certificates for validation or the public keys. The public keys will be extracted from the certificates automatically if `usePublicKeys` is choosen.
+
+### Custom Queue
+
+A custom queue can be specified when delegate methods are called. By default `dispatch_get_main_queue` is used, thus making all delegate methods calls run on the main thread. It is important to note that all WebSocket processing is done on a background thread, only the delegate method calls are changed when modifying the queue. The actual processing is always on a background thread and will not pause your app.
+
+```swift
+var socket = WebSocket(url: NSURL(string: "ws://localhost:8080/")!, protocols: ["chat","superchat"])
+//create a custom queue
+socket.queue = dispatch_queue_create("com.vluxe.starscream.myapp", nil)
 ```
 
 ### Custom Queue

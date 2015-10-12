@@ -36,6 +36,25 @@
 @interface JFRSecurity : NSObject
 
 /**
+ Use certs from main app bundle
+ 
+ :param usePublicKeys: is to specific if the publicKeys or certificates should be used for SSL pinning validation
+ 
+ :returns: a representation security object to be used with
+ */
+- (instancetype)initWithCerts:(NSArray<JFRSSLCert*>*)certs publicKeys:(BOOL)publicKeys;
+
+/**
+ Designated init
+ 
+ :param keys: is the certificates or public keys to use
+ :param usePublicKeys: is to specific if the publicKeys or certificates should be used for SSL pinning validation
+ 
+ :returns: a representation security object to be used with
+ */
+- (instancetype)initUsingPublicKeys:(BOOL)publicKeys;
+
+/**
  Should the domain name be validated? Default is YES.
  */
 @property(nonatomic)BOOL validatedDN;
