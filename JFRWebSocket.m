@@ -39,6 +39,11 @@ typedef NS_ENUM(NSUInteger, JFRInternalErrorCode) {
     JFROutputStreamWriteError  = 1
 };
 
+typedef NS_ENUM(NSUInteger, JFRInternalHTTPStatus) {
+    JFRInternalHTTPStatusWebSocket = 101,
+    JFRInternalHTTPStatusError     = 0
+};
+
 //holds the responses in our read stack to properly process messages
 @interface JFRResponse : NSObject
 
@@ -320,9 +325,11 @@ static const size_t  JFRMaxFrameSize        = 32;
         NSInteger length = [self.inputStream read:buffer maxLength:BUFFER_MAX];
         if(length > 0) {
             if(!self.isConnected) {
-                _isConnected = [self processHTTP:buffer length:length];
-                if(!_isConnected) {
-                    [self doDisconnect:[self errorWithDetail:@"Invalid HTTP upgrade" code:1]];
+                JFRInternalHTTPStatus status = [self processHTTP:buffer length:length];
+                if(status != JFRInternalHTTPStatusWebSocket) {
+                    [self doDisconnect:[self errorWithDetail:@"Invalid HTTP upgrade" code:1 userInfo:@{@"HTTPResponseStatusCode" : @(status)}]];
+                } else {
+                    _isConnected = YES;
                 }
             } else {
                 BOOL process = NO;
@@ -355,7 +362,7 @@ static const size_t  JFRMaxFrameSize        = 32;
 }
 /////////////////////////////////////////////////////////////////////////////
 //Finds the HTTP Packet in the TCP stream, by looking for the CRLF.
-- (BOOL)processHTTP:(uint8_t*)buffer length:(NSInteger)bufferLen {
+- (JFRInternalHTTPStatus)processHTTP:(uint8_t*)buffer length:(NSInteger)bufferLen {
     int k = 0;
     NSInteger totalSize = 0;
     for(int i = 0; i < bufferLen; i++) {
@@ -370,7 +377,8 @@ static const size_t  JFRMaxFrameSize        = 32;
         }
     }
     if(totalSize > 0) {
-        if([self validateResponse:buffer length:totalSize]) {
+        JFRInternalHTTPStatus status = [self validateResponse:buffer length:totalSize];
+        if (status == JFRInternalHTTPStatusWebSocket) {
             if([self.delegate respondsToSelector:@selector(websocketDidConnect:)]) {
                 __weak typeof(self) weakSelf = self;
                 dispatch_async(self.queue,^{
@@ -385,27 +393,28 @@ static const size_t  JFRMaxFrameSize        = 32;
             if(restSize > 0) {
                 [self processRawMessage:(buffer+totalSize) length:restSize];
             }
-            return YES;
         }
+        return status;
     }
-    return NO;
+    return JFRInternalHTTPStatusError;
 }
 /////////////////////////////////////////////////////////////////////////////
 //Validate the HTTP is a 101, as per the RFC spec.
-- (BOOL)validateResponse:(uint8_t *)buffer length:(NSInteger)bufferLen {
+- (JFRInternalHTTPStatus)validateResponse:(uint8_t *)buffer length:(NSInteger)bufferLen {
     CFHTTPMessageRef response = CFHTTPMessageCreateEmpty(kCFAllocatorDefault, NO);
     CFHTTPMessageAppendBytes(response, buffer, bufferLen);
-    if(CFHTTPMessageGetResponseStatusCode(response) != 101) {
+    JFRInternalHTTPStatus statusCode = CFHTTPMessageGetResponseStatusCode(response);
+    if(statusCode != JFRInternalHTTPStatusWebSocket) {
         CFRelease(response);
-        return NO;
+        return statusCode;
     }
     NSDictionary *headers = (__bridge_transfer NSDictionary *)(CFHTTPMessageCopyAllHeaderFields(response));
     NSString *acceptKey = headers[headerWSAcceptName];
     CFRelease(response);
     if(acceptKey.length > 0) {
-        return YES;
+        return statusCode;
     }
-    return NO;
+    return JFRInternalHTTPStatusError;
 }
 /////////////////////////////////////////////////////////////////////////////
 -(void)processRawMessage:(uint8_t*)buffer length:(NSInteger)bufferLen {
@@ -698,8 +707,15 @@ static const size_t  JFRMaxFrameSize        = 32;
 /////////////////////////////////////////////////////////////////////////////
 - (NSError*)errorWithDetail:(NSString*)detail code:(NSInteger)code
 {
+    return [self errorWithDetail:detail code:code userInfo:nil];
+}
+- (NSError*)errorWithDetail:(NSString*)detail code:(NSInteger)code userInfo:(NSDictionary *)userInfo
+{
     NSMutableDictionary* details = [NSMutableDictionary dictionary];
-    [details setValue:detail forKey:NSLocalizedDescriptionKey];
+    details[detail] = NSLocalizedDescriptionKey;
+    if (userInfo) {
+        [details addEntriesFromDictionary:userInfo];
+    }
     return [[NSError alloc] initWithDomain:@"JFRWebSocket" code:code userInfo:details];
 }
 /////////////////////////////////////////////////////////////////////////////
