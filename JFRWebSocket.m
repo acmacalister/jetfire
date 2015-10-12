@@ -320,8 +320,8 @@ static const size_t  JFRMaxFrameSize        = 32;
         NSInteger length = [self.inputStream read:buffer maxLength:BUFFER_MAX];
         if(length > 0) {
             if(!self.isConnected) {
-                BOOL status = [self processHTTP:buffer length:length];
-                if(!status) {
+                _isConnected = [self processHTTP:buffer length:length];
+                if(!_isConnected) {
                     [self doDisconnect:[self errorWithDetail:@"Invalid HTTP upgrade" code:1]];
                 }
             } else {
@@ -374,7 +374,6 @@ static const size_t  JFRMaxFrameSize        = 32;
             if([self.delegate respondsToSelector:@selector(websocketDidConnect:)]) {
                 __weak typeof(self) weakSelf = self;
                 dispatch_async(self.queue,^{
-                    _isConnected = YES;
                     [weakSelf.delegate websocketDidConnect:self];
                     if(weakSelf.onConnect) {
                         weakSelf.onConnect();

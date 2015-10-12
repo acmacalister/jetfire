@@ -35,6 +35,9 @@
 
 @interface JFRSecurity : NSObject
 
-@property(nonatomic)BOOL validatedDN; //should the domain name be validated?
+/**
+ Should the domain name be validated? Default is YES.
+ */
+@property(nonatomic)BOOL validatedDN;
 
 @end
