@@ -394,15 +394,15 @@ static const size_t  JFRMaxFrameSize        = 32;
     if(totalSize > 0) {
         JFRInternalHTTPStatus status = [self validateResponse:buffer length:totalSize];
         if (status == JFRInternalHTTPStatusWebSocket) {
-            if([self.delegate respondsToSelector:@selector(websocketDidConnect:)]) {
-                __weak typeof(self) weakSelf = self;
-                dispatch_async(self.queue,^{
+            __weak typeof(self) weakSelf = self;
+            dispatch_async(self.queue,^{
+                if([self.delegate respondsToSelector:@selector(websocketDidConnect:)]) {
                     [weakSelf.delegate websocketDidConnect:self];
-                    if(weakSelf.onConnect) {
-                        weakSelf.onConnect();
-                    }
-                });
-            }
+                }
+                if(weakSelf.onConnect) {
+                    weakSelf.onConnect();
+                }
+            });
             totalSize += 1; //skip the last \n
             NSInteger  restSize = bufferLen-totalSize;
             if(restSize > 0) {
