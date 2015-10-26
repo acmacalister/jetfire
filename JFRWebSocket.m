@@ -343,8 +343,6 @@ static const size_t  JFRMaxFrameSize        = 32;
                 JFRInternalHTTPStatus status = [self processHTTP:buffer length:length];
                 if(status != JFRInternalHTTPStatusWebSocket) {
                     [self doDisconnect:[self errorWithDetail:@"Invalid HTTP upgrade" code:1 userInfo:@{@"HTTPResponseStatusCode" : @(status)}]];
-                } else {
-                    _isConnected = YES;
                 }
             } else {
                 BOOL process = NO;
@@ -394,6 +392,7 @@ static const size_t  JFRMaxFrameSize        = 32;
     if(totalSize > 0) {
         JFRInternalHTTPStatus status = [self validateResponse:buffer length:totalSize];
         if (status == JFRInternalHTTPStatusWebSocket) {
+            _isConnected = YES;
             __weak typeof(self) weakSelf = self;
             dispatch_async(self.queue,^{
                 if([self.delegate respondsToSelector:@selector(websocketDidConnect:)]) {
