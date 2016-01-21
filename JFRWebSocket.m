@@ -39,10 +39,7 @@ typedef NS_ENUM(NSUInteger, JFRInternalErrorCode) {
     JFROutputStreamWriteError  = 1
 };
 
-typedef NS_ENUM(NSUInteger, JFRInternalHTTPStatus) {
-    JFRInternalHTTPStatusWebSocket = 101,
-    JFRInternalHTTPStatusError     = 0
-};
+#define kJFRInternalHTTPStatusWebSocket 101
 
 //holds the responses in our read stack to properly process messages
 @interface JFRResponse : NSObject
@@ -167,6 +164,25 @@ static const size_t  JFRMaxFrameSize        = 32;
 #pragma mark - connect's internal supporting methods
 
 /////////////////////////////////////////////////////////////////////////////
+
+- (NSString *)origin;
+{
+    NSString *scheme = [_url.scheme lowercaseString];
+    
+    if ([scheme isEqualToString:@"wss"]) {
+        scheme = @"https";
+    } else if ([scheme isEqualToString:@"ws"]) {
+        scheme = @"http";
+    }
+    
+    if (_url.port) {
+        return [NSString stringWithFormat:@"%@://%@:%@/", scheme, _url.host, _url.port];
+    } else {
+        return [NSString stringWithFormat:@"%@://%@/", scheme, _url.host];
+    }
+}
+
+
 //Uses CoreFoundation to build a HTTP request to send over TCP stream.
 - (void)createHTTPRequest {
     CFURLRef url = CFURLCreateWithString(kCFAllocatorDefault, (CFStringRef)self.url.absoluteString, NULL);
@@ -185,19 +201,13 @@ static const size_t  JFRMaxFrameSize        = 32;
             port = @(80);
         }
     }
-    NSString *protocols = @"";
-    if(self.optProtocols) {
+    NSString *protocols = nil;
+    if([self.optProtocols count] > 0) {
         protocols = [self.optProtocols componentsJoinedByString:@","];
     }
     CFHTTPMessageSetHeaderFieldValue(urlRequest,
-                                     (__bridge CFStringRef)headerWSUpgradeName,
-                                     (__bridge CFStringRef)headerWSUpgradeValue);
-    CFHTTPMessageSetHeaderFieldValue(urlRequest,
-                                     (__bridge CFStringRef)headerWSConnectionName,
-                                     (__bridge CFStringRef)headerWSConnectionValue);
-    CFHTTPMessageSetHeaderFieldValue(urlRequest,
-                                     (__bridge CFStringRef)headerWSProtocolName,
-                                     (__bridge CFStringRef)protocols);
+                                     (__bridge CFStringRef)headerWSHostName,
+                                     (__bridge CFStringRef)[NSString stringWithFormat:@"%@:%@",self.url.host,port]);
     CFHTTPMessageSetHeaderFieldValue(urlRequest,
                                      (__bridge CFStringRef)headerWSVersionName,
                                      (__bridge CFStringRef)headerWSVersionValue);
@@ -205,11 +215,20 @@ static const size_t  JFRMaxFrameSize        = 32;
                                      (__bridge CFStringRef)headerWSKeyName,
                                      (__bridge CFStringRef)[self generateWebSocketKey]);
     CFHTTPMessageSetHeaderFieldValue(urlRequest,
-                                     (__bridge CFStringRef)headerOriginName,
-                                     (__bridge CFStringRef)self.url.absoluteString);
+                                     (__bridge CFStringRef)headerWSUpgradeName,
+                                     (__bridge CFStringRef)headerWSUpgradeValue);
     CFHTTPMessageSetHeaderFieldValue(urlRequest,
-                                     (__bridge CFStringRef)headerWSHostName,
-                                     (__bridge CFStringRef)[NSString stringWithFormat:@"%@:%@",self.url.host,port]);
+                                     (__bridge CFStringRef)headerWSConnectionName,
+                                     (__bridge CFStringRef)headerWSConnectionValue);
+    if (protocols.length > 0) {
+        CFHTTPMessageSetHeaderFieldValue(urlRequest,
+                                         (__bridge CFStringRef)headerWSProtocolName,
+                                         (__bridge CFStringRef)protocols);
+    }
+   
+    CFHTTPMessageSetHeaderFieldValue(urlRequest,
+                                     (__bridge CFStringRef)headerOriginName,
+                                     (__bridge CFStringRef)[self origin]);
     
     for(NSString *key in self.headers) {
         CFHTTPMessageSetHeaderFieldValue(urlRequest,
@@ -217,6 +236,9 @@ static const size_t  JFRMaxFrameSize        = 32;
                                          (__bridge CFStringRef)self.headers[key]);
     }
     
+#if defined(DEBUG)
+    NSLog(@"urlRequest = \"%@\"", urlRequest);
+#endif
     NSData *serializedRequest = (__bridge_transfer NSData *)(CFHTTPMessageCopySerializedMessage(urlRequest));
     [self initStreamsWithData:serializedRequest port:port];
     CFRelease(urlRequest);
@@ -266,7 +288,8 @@ static const size_t  JFRMaxFrameSize        = 32;
     [self.outputStream scheduleInRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
     [self.inputStream open];
     [self.outputStream open];
-    [self.outputStream write:[data bytes] maxLength:[data length]];
+    size_t dataLen = [data length];
+    [self.outputStream write:[data bytes] maxLength:dataLen];
     while (self.isRunLoop) {
         [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate distantFuture]];
     }
@@ -340,9 +363,18 @@ static const size_t  JFRMaxFrameSize        = 32;
         NSInteger length = [self.inputStream read:buffer maxLength:BUFFER_MAX];
         if(length > 0) {
             if(!self.isConnected) {
-                JFRInternalHTTPStatus status = [self processHTTP:buffer length:length];
-                if(status != JFRInternalHTTPStatusWebSocket) {
-                    [self doDisconnect:[self errorWithDetail:@"Invalid HTTP upgrade" code:1 userInfo:@{@"HTTPResponseStatusCode" : @(status)}]];
+                CFIndex responseStatusCode;
+                BOOL status = [self processHTTP:buffer length:length responseStatusCode:&responseStatusCode];
+#if defined(DEBUG)
+                if (length < BUFFER_MAX) {
+                    buffer[length] = 0x00;
+                } else {
+                    buffer[BUFFER_MAX - 1] = 0x00;
+                }
+                NSLog(@"response (%ld) = \"%s\"", responseStatusCode, buffer);
+#endif
+                if(status == NO) {
+                    [self doDisconnect:[self errorWithDetail:@"Invalid HTTP upgrade" code:1 userInfo:@{@"HTTPResponseStatusCode" : @(responseStatusCode)}]];
                 }
             } else {
                 BOOL process = NO;
@@ -375,7 +407,7 @@ static const size_t  JFRMaxFrameSize        = 32;
 }
 /////////////////////////////////////////////////////////////////////////////
 //Finds the HTTP Packet in the TCP stream, by looking for the CRLF.
-- (JFRInternalHTTPStatus)processHTTP:(uint8_t*)buffer length:(NSInteger)bufferLen {
+- (BOOL)processHTTP:(uint8_t*)buffer length:(NSInteger)bufferLen responseStatusCode:(CFIndex*)responseStatusCode {
     int k = 0;
     NSInteger totalSize = 0;
     for(int i = 0; i < bufferLen; i++) {
@@ -390,8 +422,8 @@ static const size_t  JFRMaxFrameSize        = 32;
         }
     }
     if(totalSize > 0) {
-        JFRInternalHTTPStatus status = [self validateResponse:buffer length:totalSize];
-        if (status == JFRInternalHTTPStatusWebSocket) {
+        BOOL status = [self validateResponse:buffer length:totalSize responseStatusCode:responseStatusCode];
+        if (status == YES) {
             _isConnected = YES;
             __weak typeof(self) weakSelf = self;
             dispatch_async(self.queue,^{
@@ -410,25 +442,26 @@ static const size_t  JFRMaxFrameSize        = 32;
         }
         return status;
     }
-    return JFRInternalHTTPStatusError;
+    return NO;
 }
 /////////////////////////////////////////////////////////////////////////////
 //Validate the HTTP is a 101, as per the RFC spec.
-- (JFRInternalHTTPStatus)validateResponse:(uint8_t *)buffer length:(NSInteger)bufferLen {
+- (BOOL)validateResponse:(uint8_t *)buffer length:(NSInteger)bufferLen responseStatusCode:(CFIndex*)responseStatusCode {
     CFHTTPMessageRef response = CFHTTPMessageCreateEmpty(kCFAllocatorDefault, NO);
     CFHTTPMessageAppendBytes(response, buffer, bufferLen);
-    JFRInternalHTTPStatus statusCode = CFHTTPMessageGetResponseStatusCode(response);
-    if(statusCode != JFRInternalHTTPStatusWebSocket) {
+    *responseStatusCode = CFHTTPMessageGetResponseStatusCode(response);
+    BOOL status = ((*responseStatusCode) == kJFRInternalHTTPStatusWebSocket)?(YES):(NO);
+    if(status == NO) {
         CFRelease(response);
-        return statusCode;
+        return NO;
     }
     NSDictionary *headers = (__bridge_transfer NSDictionary *)(CFHTTPMessageCopyAllHeaderFields(response));
     NSString *acceptKey = headers[headerWSAcceptName];
     CFRelease(response);
     if(acceptKey.length > 0) {
-        return statusCode;
+        return YES;
     }
-    return JFRInternalHTTPStatusError;
+    return NO;
 }
 /////////////////////////////////////////////////////////////////////////////
 -(void)processRawMessage:(uint8_t*)buffer length:(NSInteger)bufferLen {
