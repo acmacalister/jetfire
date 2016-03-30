@@ -51,6 +51,7 @@
 @interface JFRWebSocket : NSObject
 
 @property(nonatomic,weak)id<JFRWebSocketDelegate>delegate;
+@property(nonatomic, readonly) NSURL *url;
 
 /**
  constructor to create a new websocket.
@@ -115,7 +116,7 @@
 /**
  Use for SSL pinning.
  */
-@property(nonatomic)JFRSecurity *security;
+@property(nonatomic, strong)JFRSecurity *security;
 
 /**
  Set your own custom queue.
