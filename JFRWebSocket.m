@@ -748,6 +748,9 @@ static const size_t  JFRMaxFrameSize        = 32;
             if([weakSelf.delegate respondsToSelector:@selector(websocketDidDisconnect:error:)]) {
                 [weakSelf.delegate websocketDidDisconnect:weakSelf error:error];
             }
+            if(weakSelf.onDisconnect) {
+                weakSelf.onDisconnect(error);
+            }
         });
     }
 }
