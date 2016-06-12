@@ -307,10 +307,8 @@ static const size_t  JFRMaxFrameSize        = 32;
             self.certValidated = YES;
         } else {
             [self disconnectStream:[self errorWithDetail:@"Invalid SSL certificate" code:1]];
-            CFRelease(trust);
             return;
         }
-        CFRelease(trust);
     }
     switch (eventCode) {
         case NSStreamEventNone:

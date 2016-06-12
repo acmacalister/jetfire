@@ -8,7 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		5CD0D3E01BCC397500266A6D /* JFRWebSocket.m in Sources */ = {isa = PBXBuildFile; fileRef = 6B22F5F01A9D967D0052A037 /* JFRWebSocket.m */; };
-		5CD0D3E41BCC39C600266A6D /* JFRSecurity.m in Sources */ = {isa = PBXBuildFile; fileRef = 5CD0D3E31BCC39C600266A6D /* JFRSecurity.m */; settings = {ASSET_TAGS = (); }; };
+		5CD0D3E41BCC39C600266A6D /* JFRSecurity.m in Sources */ = {isa = PBXBuildFile; fileRef = 5CD0D3E31BCC39C600266A6D /* JFRSecurity.m */; };
 		6B22F5CB1A9D94C80052A037 /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 6B22F5CA1A9D94C80052A037 /* main.m */; };
 		6B22F5CE1A9D94C80052A037 /* AppDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = 6B22F5CD1A9D94C80052A037 /* AppDelegate.m */; };
 		6B22F5D11A9D94C80052A037 /* ViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 6B22F5D01A9D94C80052A037 /* ViewController.m */; };

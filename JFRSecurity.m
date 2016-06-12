@@ -152,7 +152,7 @@
             }
         }
     }
-    CFRelease(trust);
+    
     CFRelease(policy);
     return status;
 }
