@@ -171,16 +171,6 @@ You load either a `NSData` blob of your certificate or you can use a `SecKeyRef`
 
 A custom queue can be specified when delegate methods are called. By default `dispatch_get_main_queue` is used, thus making all delegate methods calls run on the main thread. It is important to note that all WebSocket processing is done on a background thread, only the delegate method calls are changed when modifying the queue. The actual processing is always on a background thread and will not pause your app.
 
-```swift
-var socket = WebSocket(url: NSURL(string: "ws://localhost:8080/")!, protocols: ["chat","superchat"])
-//create a custom queue
-socket.queue = dispatch_queue_create("com.vluxe.starscream.myapp", nil)
-```
-
-### Custom Queue
-
-A custom queue can be specified when delegate methods are called. By default `dispatch_get_main_queue` is used, thus making all delegate methods calls run on the main thread. It is important to note that all WebSocket processing is done on a background thread, only the delegate method calls are changed when modifying the queue. The actual processing is always on a background thread and will not pause your app.
-
 ```objc
 //create a custom queue
 self.socket.queue = dispatch_queue_create("com.vluxe.jetfire.myapp", nil);
