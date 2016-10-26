@@ -46,6 +46,7 @@
  */
 -(void)websocket:(JFRWebSocket*)socket didReceiveData:(NSData*)data;
 
+-(void)websocket:(JFRWebSocket*)socket didReceivePong:(NSData*)data;
 @end
 
 @interface JFRWebSocket : NSObject

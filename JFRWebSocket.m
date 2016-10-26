@@ -729,6 +729,12 @@ static const size_t  JFRMaxFrameSize        = 32;
             if(extra > 0) {
                 [self processRawMessage:(buffer+step) length:extra];
             }
+            __weak typeof(self) weakSelf = self;
+            dispatch_async(self.queue,^{
+                if([weakSelf.delegate respondsToSelector:@selector(websocket:didReceivePong:)]) {
+                    [weakSelf.delegate websocket:weakSelf didReceivePong:data];
+                }
+            });
             return;
         }
         JFRResponse *response = [self.readStack lastObject];
