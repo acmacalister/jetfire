@@ -54,16 +54,16 @@ typedef NS_ENUM(NSUInteger, JFRInternalErrorCode) {
 
 @interface JFRWebSocket ()<NSStreamDelegate>
 
-@property(nonatomic, strong)NSURL *url;
-@property(nonatomic, strong)NSInputStream *inputStream;
-@property(nonatomic, strong)NSOutputStream *outputStream;
-@property(nonatomic, strong)NSOperationQueue *writeQueue;
+@property(nonatomic, strong, nonnull)NSURL *url;
+@property(nonatomic, strong, null_unspecified)NSInputStream *inputStream;
+@property(nonatomic, strong, null_unspecified)NSOutputStream *outputStream;
+@property(nonatomic, strong, null_unspecified)NSOperationQueue *writeQueue;
 @property(nonatomic, assign)BOOL isRunLoop;
-@property(nonatomic, strong)NSMutableArray *readStack;
-@property(nonatomic, strong)NSMutableArray *inputQueue;
-@property(nonatomic, strong)NSData *fragBuffer;
-@property(nonatomic, strong)NSMutableDictionary *headers;
-@property(nonatomic, strong)NSArray *optProtocols;
+@property(nonatomic, strong, nonnull)NSMutableArray *readStack;
+@property(nonatomic, strong, nonnull)NSMutableArray *inputQueue;
+@property(nonatomic, strong, nullable)NSData *fragBuffer;
+@property(nonatomic, strong, nullable)NSMutableDictionary *headers;
+@property(nonatomic, strong, nullable)NSArray *optProtocols;
 @property(nonatomic, assign)BOOL isCreated;
 @property(nonatomic, assign)BOOL didDisconnect;
 @property(nonatomic, assign)BOOL certValidated;
@@ -71,6 +71,7 @@ typedef NS_ENUM(NSUInteger, JFRInternalErrorCode) {
 @end
 
 //Constant Header Values.
+NS_ASSUME_NONNULL_BEGIN
 static NSString *const headerWSUpgradeName     = @"Upgrade";
 static NSString *const headerWSUpgradeValue    = @"websocket";
 static NSString *const headerWSHostName        = @"Host";
@@ -82,6 +83,7 @@ static NSString *const headerWSVersionValue    = @"13";
 static NSString *const headerWSKeyName         = @"Sec-WebSocket-Key";
 static NSString *const headerOriginName        = @"Origin";
 static NSString *const headerWSAcceptName      = @"Sec-WebSocket-Accept";
+NS_ASSUME_NONNULL_END
 
 //Class Constants
 static char CRLFBytes[] = {'\r', '\n', '\r', '\n'};
