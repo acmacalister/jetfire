@@ -12,6 +12,11 @@
 		210EA81A1D99645C00A323C8 /* JFRWebSocket.h in Headers */ = {isa = PBXBuildFile; fileRef = 210EA8161D99645C00A323C8 /* JFRWebSocket.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		210EA81B1D99645C00A323C8 /* JFRWebSocket.m in Sources */ = {isa = PBXBuildFile; fileRef = 210EA8171D99645C00A323C8 /* JFRWebSocket.m */; };
 		210EA81D1D99648E00A323C8 /* Jetfire.h in Headers */ = {isa = PBXBuildFile; fileRef = 210EA81C1D99648E00A323C8 /* Jetfire.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		F50026411DCCB5C200FE4410 /* Jetfire-Mac.h in Headers */ = {isa = PBXBuildFile; fileRef = F500263F1DCCB5C200FE4410 /* Jetfire-Mac.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		F50026451DCCB5D800FE4410 /* JFRSecurity.m in Sources */ = {isa = PBXBuildFile; fileRef = 210EA8151D99645C00A323C8 /* JFRSecurity.m */; };
+		F50026461DCCB5DB00FE4410 /* JFRSecurity.h in Headers */ = {isa = PBXBuildFile; fileRef = 210EA8141D99645C00A323C8 /* JFRSecurity.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		F50026471DCCB5E200FE4410 /* JFRWebSocket.m in Sources */ = {isa = PBXBuildFile; fileRef = 210EA8171D99645C00A323C8 /* JFRWebSocket.m */; };
+		F50026481DCCB5E500FE4410 /* JFRWebSocket.h in Headers */ = {isa = PBXBuildFile; fileRef = 210EA8161D99645C00A323C8 /* JFRWebSocket.h */; settings = {ATTRIBUTES = (Public, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -22,10 +27,20 @@
 		210EA8161D99645C00A323C8 /* JFRWebSocket.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = JFRWebSocket.h; sourceTree = SOURCE_ROOT; };
 		210EA8171D99645C00A323C8 /* JFRWebSocket.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = JFRWebSocket.m; sourceTree = SOURCE_ROOT; };
 		210EA81C1D99648E00A323C8 /* Jetfire.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = Jetfire.h; sourceTree = SOURCE_ROOT; };
+		F500263D1DCCB5C200FE4410 /* Jetfire.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Jetfire.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		F500263F1DCCB5C200FE4410 /* Jetfire-Mac.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Jetfire-Mac.h"; sourceTree = "<group>"; };
+		F50026401DCCB5C200FE4410 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		210EA8051D99642A00A323C8 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F50026391DCCB5C200FE4410 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -39,6 +54,7 @@
 			isa = PBXGroup;
 			children = (
 				210EA80B1D99642A00A323C8 /* Jetfire */,
+				F500263E1DCCB5C200FE4410 /* Jetfire-Mac */,
 				210EA80A1D99642A00A323C8 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -47,6 +63,7 @@
 			isa = PBXGroup;
 			children = (
 				210EA8091D99642A00A323C8 /* Jetfire.framework */,
+				F500263D1DCCB5C200FE4410 /* Jetfire.framework */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -64,6 +81,15 @@
 			path = Jetfire;
 			sourceTree = "<group>";
 		};
+		F500263E1DCCB5C200FE4410 /* Jetfire-Mac */ = {
+			isa = PBXGroup;
+			children = (
+				F500263F1DCCB5C200FE4410 /* Jetfire-Mac.h */,
+				F50026401DCCB5C200FE4410 /* Info.plist */,
+			);
+			path = "Jetfire-Mac";
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXHeadersBuildPhase section */
@@ -74,6 +100,16 @@
 				210EA81A1D99645C00A323C8 /* JFRWebSocket.h in Headers */,
 				210EA81D1D99648E00A323C8 /* Jetfire.h in Headers */,
 				210EA8181D99645C00A323C8 /* JFRSecurity.h in Headers */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F500263A1DCCB5C200FE4410 /* Headers */ = {
+			isa = PBXHeadersBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F50026481DCCB5E500FE4410 /* JFRWebSocket.h in Headers */,
+				F50026411DCCB5C200FE4410 /* Jetfire-Mac.h in Headers */,
+				F50026461DCCB5DB00FE4410 /* JFRSecurity.h in Headers */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -98,6 +134,24 @@
 			productReference = 210EA8091D99642A00A323C8 /* Jetfire.framework */;
 			productType = "com.apple.product-type.framework";
 		};
+		F500263C1DCCB5C200FE4410 /* Jetfire-Mac */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F50026441DCCB5C200FE4410 /* Build configuration list for PBXNativeTarget "Jetfire-Mac" */;
+			buildPhases = (
+				F50026381DCCB5C200FE4410 /* Sources */,
+				F50026391DCCB5C200FE4410 /* Frameworks */,
+				F500263A1DCCB5C200FE4410 /* Headers */,
+				F500263B1DCCB5C200FE4410 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "Jetfire-Mac";
+			productName = "Jetfire-Mac";
+			productReference = F500263D1DCCB5C200FE4410 /* Jetfire.framework */;
+			productType = "com.apple.product-type.framework";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -109,6 +163,10 @@
 				TargetAttributes = {
 					210EA8081D99642A00A323C8 = {
 						CreatedOnToolsVersion = 8.0;
+						ProvisioningStyle = Automatic;
+					};
+					F500263C1DCCB5C200FE4410 = {
+						CreatedOnToolsVersion = 8.1;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -126,12 +184,20 @@
 			projectRoot = "";
 			targets = (
 				210EA8081D99642A00A323C8 /* Jetfire-iOS */,
+				F500263C1DCCB5C200FE4410 /* Jetfire-Mac */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		210EA8071D99642A00A323C8 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F500263B1DCCB5C200FE4410 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -147,6 +213,15 @@
 			files = (
 				210EA81B1D99645C00A323C8 /* JFRWebSocket.m in Sources */,
 				210EA8191D99645C00A323C8 /* JFRSecurity.m in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F50026381DCCB5C200FE4410 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F50026471DCCB5E200FE4410 /* JFRWebSocket.m in Sources */,
+				F50026451DCCB5D800FE4410 /* JFRSecurity.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -283,6 +358,48 @@
 			};
 			name = Release;
 		};
+		F50026421DCCB5C200FE4410 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "-";
+				COMBINE_HIDPI_IMAGES = YES;
+				DEFINES_MODULE = YES;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				FRAMEWORK_VERSION = A;
+				INFOPLIST_FILE = "Jetfire-Mac/Info.plist";
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks @loader_path/Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 10.11;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.vluxe.Jetfire.Jetfire-Mac";
+				PRODUCT_NAME = Jetfire;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+			};
+			name = Debug;
+		};
+		F50026431DCCB5C200FE4410 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "-";
+				COMBINE_HIDPI_IMAGES = YES;
+				DEFINES_MODULE = YES;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				FRAMEWORK_VERSION = A;
+				INFOPLIST_FILE = "Jetfire-Mac/Info.plist";
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks @loader_path/Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 10.11;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.vluxe.Jetfire.Jetfire-Mac";
+				PRODUCT_NAME = Jetfire;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -303,6 +420,14 @@
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
+		};
+		F50026441DCCB5C200FE4410 /* Build configuration list for PBXNativeTarget "Jetfire-Mac" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F50026421DCCB5C200FE4410 /* Debug */,
+				F50026431DCCB5C200FE4410 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
 		};
 /* End XCConfigurationList section */
 	};
