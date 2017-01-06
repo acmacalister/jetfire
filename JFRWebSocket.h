@@ -46,6 +46,7 @@
  */
 -(void)websocket:(nonnull JFRWebSocket*)socket didReceiveData:(nullable NSData*)data;
 
+-(void)websocket:(JFRWebSocket*)socket didReceivePong:(NSData*)data;
 @end
 
 @interface JFRWebSocket : NSObject
@@ -112,6 +113,16 @@
  Default setting is No.
  */
 @property(nonatomic, assign)BOOL selfSignedSSL;
+
+/**
+ SSL security level for connection.
+ See the kCFStreamSocketSecurityLevel constants for accepted values.
+ If left nil (unset) kCFStreamSo cketSecurityLevelNegotiatedSSL is used.
+ 
+ NOTE: On iOS7 (and 8?) kCFStreamSocketSecurityLevelNegotiatedSSL will fail for servers that negotiate SSL level lower than TLSv1
+       Thus it's wise to set this to kCFStreamSocketSecurityLevelTLSv1 in most cases.
+ */
+@property(nonatomic, strong)NSString *securityLevel;
 
 /**
  Use for SSL pinning.
