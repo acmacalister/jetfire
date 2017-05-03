@@ -290,14 +290,14 @@ static const size_t  JFRMaxFrameSize        = 32;
         [self.outputStream setProperty:settings forKey:key];
     }
     self.isRunLoop = YES;
-    [self.inputStream scheduleInRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
-    [self.outputStream scheduleInRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
+    [self.inputStream scheduleInRunLoop:[NSRunLoop currentRunLoop] forMode:@"JFRWebSocketRunLoopMode"];
+    [self.outputStream scheduleInRunLoop:[NSRunLoop currentRunLoop] forMode:@"JFRWebSocketRunLoopMode"];
     [self.inputStream open];
     [self.outputStream open];
     size_t dataLen = [data length];
     [self.outputStream write:[data bytes] maxLength:dataLen];
     while (self.isRunLoop) {
-        [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate distantFuture]];
+        [[NSRunLoop currentRunLoop] runMode:@"JFRWebSocketRunLoopMode" beforeDate:[NSDate distantFuture]];
     }
 }
 /////////////////////////////////////////////////////////////////////////////
