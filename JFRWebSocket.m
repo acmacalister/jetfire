@@ -129,15 +129,20 @@ static const size_t  JFRMaxFrameSize        = 32;
     });
 
     //everything is on a background thread.
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        weakSelf.isCreated = YES;
-        @try {
-            [weakSelf createHTTPRequest];
-        } @finally {
-            weakSelf.isCreated = NO;
-            [self disconnect];
-        }
-    });
+    @try {
+        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+            weakSelf.isCreated = YES;
+            @try {
+                [weakSelf createHTTPRequest];
+            } @finally {
+                weakSelf.isCreated = NO;
+                [self disconnect];
+            }
+        });
+    } @finally {
+        weakSelf.isCreated = NO;
+        [self disconnect];
+    }
 }
 /////////////////////////////////////////////////////////////////////////////
 - (void)disconnect {
