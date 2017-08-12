@@ -20,6 +20,7 @@
 //////////////////////////////////////////////////////////////////////////////////////////////////
 
 #import "JFRWebSocket.h"
+#import <UIKit/UIKit.h>
 
 //get the opCode from the packet
 typedef NS_ENUM(NSUInteger, JFROpCode) {
@@ -48,7 +49,8 @@ typedef NS_ENUM(NSUInteger, JFRCloseCode) {
 
 typedef NS_ENUM(NSUInteger, JFRInternalErrorCode) {
     // 0-999 WebSocket status codes not used
-    JFROutputStreamWriteError  = 1
+    JFROutputStreamWriteError  = 1,
+    JFRProxyError = 2,
 };
 
 #define kJFRInternalHTTPStatusWebSocket 101
@@ -108,6 +110,313 @@ static const uint8_t JFRRSVMask             = 0x70;
 static const uint8_t JFRMaskMask            = 0x80;
 static const uint8_t JFRPayloadLenMask      = 0x7F;
 static const size_t  JFRMaxFrameSize        = 32;
+
+@interface JFRWebSocketProxyHandler : NSObject <NSStreamDelegate, UIAlertViewDelegate>
+@property(atomic, strong)NSString *proxyUsername;
+@property(atomic, strong)NSString *proxyPassword;
+@property(nonatomic, strong)NSURL *url;
+@property(nonatomic, strong)NSURL *proxy;
+@property(nonatomic, strong)NSInputStream *inputStream;
+@property(nonatomic, strong)NSOutputStream *outputStream;
+@property(nonatomic, strong)NSCondition *proxyAuthCondition;
+@property(nonatomic, strong)NSTimer *timeout;
+@property(nonatomic, strong)NSMutableData *response;
+@property(nonatomic, copy)void (^completion)(bool success, NSInputStream *inputStream, NSOutputStream *outputStream, NSString *sni);
+@property(nonatomic, assign)bool connecting;
+@end
+
+@implementation JFRWebSocketProxyHandler
+
+- (id)init
+{
+    if(!(self = [super init]))
+        return nil;
+    
+    self.proxyAuthCondition = [NSCondition new];
+    return self;
+}
+
+- (NSURL*)wsToHTTP:(NSURL*)url
+{
+    NSURLComponents *components = [NSURLComponents componentsWithURL:url resolvingAgainstBaseURL:YES];
+    
+    if([components.scheme isEqualToString:@"wss"]) {
+        components.scheme = @"https";
+    } else if([components.scheme isEqualToString:@"ws"]) {
+        components.scheme = @"http";
+    }
+    
+    return components.URL;
+}
+
+- (void)alertView:(UIAlertView *)alertView didDismissWithButtonIndex:(NSInteger)buttonIndex
+{
+    self.proxyUsername = [alertView textFieldAtIndex:0].text;
+    self.proxyPassword = [alertView textFieldAtIndex:1].text;
+    self.proxyUsername = (self.proxyUsername ? self.proxyUsername :  @"");
+    self.proxyPassword = (self.proxyPassword ? self.proxyPassword :  @"");
+    [self.proxyAuthCondition signal];
+}
+
+- (void)promptForPassword
+{
+    __weak id weakSelf = self;
+    dispatch_sync(dispatch_get_main_queue(), ^{
+        UIAlertView *alert = [[UIAlertView alloc] initWithTitle:@"Proxy authentication"
+                                                        message:[NSString stringWithFormat:@"Enter username and password:"]
+                                                       delegate:self cancelButtonTitle:@"Ok"
+                                              otherButtonTitles:nil];
+        [alert setAlertViewStyle:UIAlertViewStyleLoginAndPasswordInput];
+        [alert textFieldAtIndex:0].text = self.proxyUsername;
+        [alert textFieldAtIndex:1].text = self.proxyPassword;
+        [alert show];
+        alert.delegate = weakSelf;
+    });
+    
+
+    [self.timeout invalidate];
+    [self.proxyAuthCondition lock];
+    [self.proxyAuthCondition wait];
+    [self.proxyAuthCondition unlock];
+    [self resetTimeout];
+}
+
+- (void)complete:(bool)success sni:(NSString*)sni
+{
+    if(!self.completion)
+        return;
+    
+    self.response = nil;
+    self.inputStream.delegate = nil;
+    self.outputStream.delegate = nil;
+    self.completion(success, self.inputStream, self.outputStream, sni);
+    self.completion = nil;
+    [self.timeout invalidate];
+    self.timeout = nil;
+}
+
+- (void)sendProxyConnectWithAuthorization:(NSString*)auth
+{
+    NSArray *headers = @[
+                         [NSString stringWithFormat:@"CONNECT %@ HTTP/1.1", [NSString stringWithFormat:@"%@:%@", self.url.host, self.url.port]],
+                         [NSString stringWithFormat:@"Host: %@", self.url.host],
+                         @"Proxy-Connection: keep-alive",
+                         @"Connection: keep-alive",
+                         @"Cache-Control: no-cache, no-store, must-revalidate",
+                         @"Pragma: no-cache",
+                         @"Expires: 0",
+                         ];
+    
+    if(auth)
+        headers = [headers arrayByAddingObject:[NSString stringWithFormat:@"Proxy-Authorization: %@", auth]];
+    
+    NSData *message = [[[headers componentsJoinedByString:@"\r\n"] stringByAppendingString:@"\r\n\r\n"] dataUsingEncoding:NSASCIIStringEncoding];
+    
+    NSInteger len = [self.outputStream write:[message bytes] maxLength:[message length]];
+    if(len <= 0) {
+        [self complete:false sni:nil];
+        return;
+    }
+}
+
+- (void)readProxyResponse
+{
+    UInt8 buf[BUFFER_MAX];
+    NSInteger len = [self.inputStream read:buf maxLength:sizeof(buf)];
+    
+    if(len < 0) {
+        [self complete:false sni:nil];
+        return;
+    }
+    
+    // 10MiB max limit
+    const size_t max_len = 10 * 1024 * 1024;
+    
+    if(self.response.length + len > max_len) {
+        NSLog(@"Proxy response over 10MiB, discarding response...");
+        self.response = nil;
+    }
+    
+    if(len > max_len)
+        return;
+
+    if(!self.response)
+        self.response = [NSMutableData data];
+    
+    [self.response appendBytes:buf length:len];
+    
+    CFHTTPMessageRef receivedProxyHTTPHeaders = CFHTTPMessageCreateEmpty(NULL, NO);
+    CFHTTPMessageAppendBytes(receivedProxyHTTPHeaders, self.response.bytes, self.response.length);
+    
+    if(!CFHTTPMessageIsHeaderComplete(receivedProxyHTTPHeaders)) {
+        CFRelease(receivedProxyHTTPHeaders);
+        return;
+    }
+    
+    NSDictionary *proxyHeaders = (__bridge id)CFHTTPMessageCopyAllHeaderFields(receivedProxyHTTPHeaders);
+    NSInteger responseCode = CFHTTPMessageGetResponseStatusCode(receivedProxyHTTPHeaders);
+    CFRelease(receivedProxyHTTPHeaders);
+    
+    if(self.response.length < [proxyHeaders[@"Content-Length"] longLongValue])
+        return;
+    
+    self.response = nil;
+    
+    if(responseCode == 407) {
+        [self promptForPassword];
+        
+        NSString *authHeader = proxyHeaders[@"Proxy-Authenticate"];
+        NSString *auth = nil;
+        NSString *authType = nil;
+        if([authHeader.lowercaseString rangeOfString:@"digest"].location != NSNotFound) {
+            authType = @"Digest";
+        } else {
+            authType = @"Basic";
+            auth = [[[NSString stringWithFormat:@"%@:%@", self.proxyUsername, self.proxyPassword] dataUsingEncoding:NSASCIIStringEncoding] base64EncodedStringWithOptions:0];
+        }
+        
+        if(auth) {
+            [self sendProxyConnectWithAuthorization:[NSString stringWithFormat:@"%@ %@", authType, auth]];
+            return;
+        }
+    }
+    
+    if(responseCode >= 400) {
+        [self complete:false sni:nil];
+    } else {
+        [self complete:true sni:self.url.host];
+    }
+}
+
+- (void)connectToProxy
+{
+    if(self.connecting)
+        return;
+    
+    self.connecting = true;
+    
+    if(!self.proxy) {
+        [self complete:true sni:nil];
+        return;
+    }
+
+    [self sendProxyConnectWithAuthorization:nil];
+}
+
+- (void)stream:(NSStream *)aStream handleEvent:(NSStreamEvent)eventCode
+{
+    switch (eventCode) {
+        case NSStreamEventOpenCompleted:
+            break;
+            
+        case NSStreamEventHasBytesAvailable:
+            if(aStream == self.inputStream)
+                [self readProxyResponse];
+            break;
+            
+        case NSStreamEventEndEncountered:
+        case NSStreamEventErrorOccurred:
+            [self complete:false sni:nil];
+            break;
+            
+        case NSStreamEventHasSpaceAvailable:
+            if(aStream == self.outputStream)
+                [self connectToProxy];
+            break;
+            
+        case NSStreamEventNone:
+        default:
+            break;
+    }
+}
+
+- (void)didTimeout
+{
+    [self complete:false sni:nil];
+}
+
+- (void)resetTimeout
+{
+    [self.timeout invalidate];
+    self.timeout = [NSTimer scheduledTimerWithTimeInterval:60.0 target:self selector:@selector(didTimeout) userInfo:nil repeats:NO];
+}
+
+- (void)connect:(NSURL*)url completion:(void(^)(bool, NSInputStream*, NSOutputStream*, NSString*))completion
+{
+    assert(completion);
+    
+    if(self.completion) {
+        completion(false, nil, nil, nil);
+        return;
+    }
+    
+    self.url = url;
+    self.completion = completion;
+    
+    NSDictionary *settings  = nil;
+    NSDictionary *proxySettings = (__bridge id)CFNetworkCopySystemProxySettings();
+    NSURL *URL = [self wsToHTTP:url];
+    NSArray *proxies = (__bridge id)CFNetworkCopyProxiesForURL((__bridge CFURLRef)URL, (__bridge CFDictionaryRef)proxySettings);
+    
+    if(proxies.count > 0) {
+        settings = proxies.firstObject;
+        
+        NSURL *pacURL;
+        if((pacURL = [settings objectForKey:(__bridge id)kCFProxyAutoConfigurationURLKey])) {
+            NSError *error = nil;
+            NSString *script = [NSString stringWithContentsOfURL:pacURL usedEncoding:nil error:&error];
+            
+            if(!error) {
+                CFErrorRef eref = nil;
+                proxies = (__bridge id)CFNetworkCopyProxiesForAutoConfigurationScript((__bridge CFStringRef)script, (__bridge CFURLRef)URL, &eref);
+                
+                if(!eref && proxies.count > 0) {
+                    settings = proxies.firstObject;
+                }
+            }
+        }
+    }
+    
+    NSURLComponents *components = [NSURLComponents new];
+    components.host = [settings objectForKey:(__bridge id)kCFProxyHostNameKey];
+    components.port = [settings objectForKey:(__bridge id)kCFProxyPortNumberKey];
+    self.proxy = components.URL;
+    
+    if(!self.proxy.host.length || !self.proxy.port)
+        self.proxy = nil;
+    
+    self.proxyUsername = [settings objectForKey:(__bridge id)kCFProxyUsernameKey];
+    self.proxyPassword = [settings objectForKey:(__bridge id)kCFProxyPasswordKey];
+    
+    if(!self.proxyUsername)
+        self.proxyUsername = [proxySettings objectForKey:@"HTTPProxyUsername"];
+    
+    if(!self.proxyPassword)
+        self.proxyPassword = [proxySettings objectForKey:@"HTTPProxyPassword"];
+    
+    CFReadStreamRef readStream = NULL;
+    CFWriteStreamRef writeStream = NULL;
+    
+    if(self.proxy) {
+        CFStreamCreatePairWithSocketToHost(NULL, (__bridge CFStringRef)self.proxy.host, [self.proxy.port intValue], &readStream, &writeStream);
+    } else {
+        CFStreamCreatePairWithSocketToHost(NULL, (__bridge CFStringRef)url.host, [url.port intValue], &readStream, &writeStream);
+    }
+    
+    self.response = nil;
+    self.connecting = false;
+    [self resetTimeout];
+    self.inputStream = (__bridge_transfer NSInputStream *)readStream;
+    self.outputStream = (__bridge_transfer NSOutputStream *)writeStream;
+    self.inputStream.delegate = self;
+    self.outputStream.delegate = self;
+    [self.inputStream scheduleInRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
+    [self.outputStream scheduleInRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
+    [self.inputStream open];
+    [self.outputStream open];
+}
+
+@end
 
 @implementation JFRWebSocket
 
@@ -207,21 +516,23 @@ static const size_t  JFRMaxFrameSize        = 32;
                                                              kCFHTTPVersion1_1);
     CFRelease(url);
     
-    NSNumber *port = _url.port;
-    if (!port) {
-        if([self.url.scheme isEqualToString:@"wss"] || [self.url.scheme isEqualToString:@"https"]){
-            port = @(443);
+    if (!self.url.port) {
+        NSURLComponents *components = [NSURLComponents componentsWithURL:self.url resolvingAgainstBaseURL:YES];
+        if([components.scheme isEqualToString:@"wss"] || [components.scheme isEqualToString:@"https"]){
+            components.port = @(443);
         } else {
-            port = @(80);
+            components.port = @(80);
         }
+        self.url = components.URL;
     }
+    
     NSString *protocols = nil;
     if([self.optProtocols count] > 0) {
         protocols = [self.optProtocols componentsJoinedByString:@","];
     }
     CFHTTPMessageSetHeaderFieldValue(urlRequest,
                                      (__bridge CFStringRef)headerWSHostName,
-                                     (__bridge CFStringRef)[NSString stringWithFormat:@"%@:%@",self.url.host,port]);
+                                     (__bridge CFStringRef)[NSString stringWithFormat:@"%@:%@",self.url.host,self.url.port]);
     CFHTTPMessageSetHeaderFieldValue(urlRequest,
                                      (__bridge CFStringRef)headerWSVersionName,
                                      (__bridge CFStringRef)headerWSVersionValue);
@@ -254,8 +565,26 @@ static const size_t  JFRMaxFrameSize        = 32;
     NSLog(@"urlRequest = \"%@\"", urlRequest);
 #endif
     NSData *serializedRequest = (__bridge_transfer NSData *)(CFHTTPMessageCopySerializedMessage(urlRequest));
-    [self initStreamsWithData:serializedRequest port:port];
     CFRelease(urlRequest);
+    
+    JFRWebSocketProxyHandler *proxyHandler = [JFRWebSocketProxyHandler new];
+    
+    __weak JFRWebSocket *weakSelf = self;
+    [proxyHandler connect:self.url completion:^(bool success, NSInputStream *inputStream, NSOutputStream *outputStream, NSString *sni){
+        weakSelf.inputStream = inputStream;
+        weakSelf.outputStream = outputStream;
+        
+        if (success) {
+            [weakSelf initStreamsWithData:serializedRequest withSNI:sni];
+        } else {
+            [weakSelf doDisconnect:[self errorWithDetail:@"proxy authentication failed" code:JFRProxyError]];
+        }
+    }];
+    
+    self.isRunLoop = YES;
+    while (self.isRunLoop) {
+        [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate distantFuture]];
+    }
 }
 /////////////////////////////////////////////////////////////////////////////
 //Random String of 16 lowercase chars, SHA1 and base64 encoded.
@@ -268,45 +597,54 @@ static const size_t  JFRMaxFrameSize        = 32;
     return [[string dataUsingEncoding:NSUTF8StringEncoding] base64EncodedStringWithOptions:0];
 }
 /////////////////////////////////////////////////////////////////////////////
-//Sets up our reader/writer for the TCP stream.
-- (void)initStreamsWithData:(NSData*)data port:(NSNumber*)port {
-    CFReadStreamRef readStream = NULL;
-    CFWriteStreamRef writeStream = NULL;
-    CFStreamCreatePairWithSocketToHost(NULL, (__bridge CFStringRef)self.url.host, [port intValue], &readStream, &writeStream);
+//Setups SSL connection for the sockets
+- (void)setupSecureConnection:(BOOL)selfSigned peerName:(NSString*)peerName {
+    NSMutableDictionary *sslSettings = [NSMutableDictionary dictionary];
+    NSString *chainKey = (__bridge_transfer NSString *)kCFStreamSSLValidatesCertificateChain;
+    NSString *peerNameKey = (__bridge_transfer NSString *)kCFStreamSSLPeerName;
     
-    self.inputStream = (__bridge_transfer NSInputStream *)readStream;
-    self.inputStream.delegate = self;
-    self.outputStream = (__bridge_transfer NSOutputStream *)writeStream;
-    self.outputStream.delegate = self;
-    if([self.url.scheme isEqualToString:@"wss"] || [self.url.scheme isEqualToString:@"https"]) {
-        [self.inputStream setProperty:NSStreamSocketSecurityLevelNegotiatedSSL forKey:NSStreamSocketSecurityLevelKey];
-        [self.outputStream setProperty:NSStreamSocketSecurityLevelNegotiatedSSL forKey:NSStreamSocketSecurityLevelKey];
-    } else {
-        self.certValidated = YES; //not a https session, so no need to check SSL pinning
+    if(peerName) {
+        [sslSettings setObject:peerName forKey:peerNameKey];
     }
+    
+    if(selfSigned) {
+        [sslSettings setObject:@(NO) forKey:chainKey];
+        [sslSettings setObject:[NSNull null] forKey:peerNameKey];
+    } else {
+        [sslSettings setObject:@(YES) forKey:chainKey];
+    }
+    
+    NSString *levelKey = (__bridge_transfer NSString *)kCFStreamPropertySocketSecurityLevel;
+    NSString *level = (__bridge_transfer NSString *)kCFStreamSocketSecurityLevelNegotiatedSSL;
+    
+    if(self.securityLevel) {
+        level = self.securityLevel;
+    }
+    
+    [sslSettings setObject:level forKey:levelKey];
+    
+    NSString *settingsKey = (__bridge_transfer NSString *)kCFStreamPropertySSLSettings;
+    [self.inputStream setProperty:sslSettings forKey:settingsKey];
+    [self.outputStream setProperty:sslSettings forKey:settingsKey];
+}
+/////////////////////////////////////////////////////////////////////////////
+//Sets up our reader/writer for the TCP stream.
+- (void)initStreamsWithData:(NSData*)data withSNI:(NSString*)sni {
+    self.inputStream.delegate = self;
+    self.outputStream.delegate = self;
+    
     if(self.voipEnabled) {
         [self.inputStream setProperty:NSStreamNetworkServiceTypeVoIP forKey:NSStreamNetworkServiceType];
         [self.outputStream setProperty:NSStreamNetworkServiceTypeVoIP forKey:NSStreamNetworkServiceType];
     }
-    if(self.selfSignedSSL) {
-        NSString *chain = (__bridge_transfer NSString *)kCFStreamSSLValidatesCertificateChain;
-        NSString *peerName = (__bridge_transfer NSString *)kCFStreamSSLValidatesCertificateChain;
-        NSString *key = (__bridge_transfer NSString *)kCFStreamPropertySSLSettings;
-        NSDictionary *settings = @{chain: [[NSNumber alloc] initWithBool:NO],
-                                   peerName: [NSNull null]};
-        [self.inputStream setProperty:settings forKey:key];
-        [self.outputStream setProperty:settings forKey:key];
+    
+    if([self.url.scheme isEqualToString:@"wss"] || [self.url.scheme isEqualToString:@"https"]) {
+        [self setupSecureConnection:self.selfSignedSSL peerName:sni];
+    } else {
+        self.certValidated = YES; // not a https session, so no need to check SSL pinning
     }
-    self.isRunLoop = YES;
-    [self.inputStream scheduleInRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
-    [self.outputStream scheduleInRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
-    [self.inputStream open];
-    [self.outputStream open];
-    size_t dataLen = [data length];
-    [self.outputStream write:[data bytes] maxLength:dataLen];
-    while (self.isRunLoop) {
-        [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate distantFuture]];
-    }
+    
+    [self.outputStream write:[data bytes] maxLength:[data length]];
 }
 /////////////////////////////////////////////////////////////////////////////
 
