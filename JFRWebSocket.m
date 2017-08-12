@@ -141,11 +141,20 @@ static const size_t  JFRMaxFrameSize        = 32;
     });
 
     //everything is on a background thread.
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        weakSelf.isCreated = YES;
-        [weakSelf createHTTPRequest];
+    @try {
+        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+            weakSelf.isCreated = YES;
+            @try {
+                [weakSelf createHTTPRequest];
+            } @finally {
+                weakSelf.isCreated = NO;
+                [self disconnect];
+            }
+        });
+    } @finally {
         weakSelf.isCreated = NO;
-    });
+        [self disconnect];
+    }
 }
 /////////////////////////////////////////////////////////////////////////////
 - (void)disconnect {
@@ -298,14 +307,14 @@ static const size_t  JFRMaxFrameSize        = 32;
         [self.outputStream setProperty:settings forKey:key];
     }
     self.isRunLoop = YES;
-    [self.inputStream scheduleInRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
-    [self.outputStream scheduleInRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
+    [self.inputStream scheduleInRunLoop:[NSRunLoop currentRunLoop] forMode:@"JFRWebSocketRunLoopMode"];
+    [self.outputStream scheduleInRunLoop:[NSRunLoop currentRunLoop] forMode:@"JFRWebSocketRunLoopMode"];
     [self.inputStream open];
     [self.outputStream open];
     size_t dataLen = [data length];
     [self.outputStream write:[data bytes] maxLength:dataLen];
     while (self.isRunLoop) {
-        [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate distantFuture]];
+        [[NSRunLoop currentRunLoop] runMode:@"JFRWebSocketRunLoopMode" beforeDate:[NSDate distantFuture]];
     }
 }
 /////////////////////////////////////////////////////////////////////////////
