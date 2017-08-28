@@ -131,8 +131,11 @@ static const size_t  JFRMaxFrameSize        = 32;
 /////////////////////////////////////////////////////////////////////////////
 //Exposed method for connecting to URL provided in init method.
 - (void)connect {
-    if(self.isCreated) {
-        return;
+    @synchronized (self) {
+        if(self.isCreated) {
+            return;
+        }
+        self.isCreated = YES;
     }
     
     __weak typeof(self) weakSelf = self;
@@ -142,9 +145,11 @@ static const size_t  JFRMaxFrameSize        = 32;
 
     //everything is on a background thread.
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        weakSelf.isCreated = YES;
-        [weakSelf createHTTPRequest];
-        weakSelf.isCreated = NO;
+        @try {
+            [weakSelf createHTTPRequest];
+        } @finally {
+            weakSelf.isCreated = NO;
+        }
     });
 }
 /////////////////////////////////////////////////////////////////////////////
