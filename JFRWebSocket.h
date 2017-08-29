@@ -66,7 +66,7 @@
 @property(nonatomic, readonly, nonnull) NSURL *url;
 
 /**
- constructor to create a new websocket.
+ constructor to create a new websocket with QOS_CLASS_UTILITY dispatch queue
  @param url       the host you want to connect to.
  @param protocols the websocket protocols you want to use (e.g. chat,superchat).
  @return a newly initalized websocket.
@@ -74,9 +74,19 @@
 - (nonnull instancetype)initWithURL:(nonnull NSURL *)url protocols:(nullable NSArray*)protocols;
 
 /**
- connect to the host.
+ constructor to create a new websocket
+ @param url       the host you want to connect to.
+ @param protocols the websocket protocols you want to use (e.g. chat,superchat).
+ @param callbackQueue the dispatch queue for handling callbacks
+ @return a newly initalized websocket.
  */
-- (void)connect;
+- (nonnull instancetype)initWithURLAndQueue:(nonnull NSURL *)url protocols:(nonnull NSArray*)protocols callbackQueue:(nonnull dispatch_queue_t)callbackQueue;
+
+/**
+ connect to the host - blocking
+ @return YES if successfully connected
+ */
+- (BOOL)connect;
 
 /**
  disconnect to the host. This sends the close Connection opcode to terminate cleanly.

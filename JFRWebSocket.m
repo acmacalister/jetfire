@@ -70,7 +70,6 @@ typedef NS_ENUM(NSUInteger, JFRInternalErrorCode) {
 @property(nonatomic, strong, null_unspecified)NSInputStream *inputStream;
 @property(nonatomic, strong, null_unspecified)NSOutputStream *outputStream;
 @property(nonatomic, strong, null_unspecified)NSOperationQueue *writeQueue;
-@property(nonatomic, assign)BOOL isRunLoop;
 @property(nonatomic, strong, nonnull)NSMutableArray *readStack;
 @property(nonatomic, strong, nonnull)NSMutableArray *inputQueue;
 @property(nonatomic, strong, nullable)NSData *fragBuffer;
@@ -79,6 +78,9 @@ typedef NS_ENUM(NSUInteger, JFRInternalErrorCode) {
 @property(nonatomic, assign)BOOL isCreated;
 @property(nonatomic, assign)BOOL didDisconnect;
 @property(nonatomic, assign)BOOL certValidated;
+
+@property (strong) NSThread *wsThread;
+
 
 @end
 
@@ -111,15 +113,24 @@ static const size_t  JFRMaxFrameSize        = 32;
 
 @implementation JFRWebSocket
 
+
 /////////////////////////////////////////////////////////////////////////////
 //Default initializer
 - (instancetype)initWithURL:(NSURL *)url protocols:(NSArray*)protocols
+{
+    return [self initWithURLAndQueue:url protocols:protocols callbackQueue:dispatch_get_global_queue(QOS_CLASS_UTILITY, 0)];
+
+}
+
+/////////////////////////////////////////////////////////////////////////////
+//Initialized with custom dispatch queue
+- (instancetype)initWithURLAndQueue:(NSURL *)url protocols:(NSArray*)protocols callbackQueue:(dispatch_queue_t)callbackQueue
 {
     if(self = [super init]) {
         self.certValidated = NO;
         self.voipEnabled = NO;
         self.selfSignedSSL = NO;
-        self.queue = dispatch_get_main_queue();
+        self.queue = callbackQueue;
         self.url = url;
         self.readStack = [NSMutableArray new];
         self.inputQueue = [NSMutableArray new];
@@ -128,29 +139,17 @@ static const size_t  JFRMaxFrameSize        = 32;
     
     return self;
 }
+
 /////////////////////////////////////////////////////////////////////////////
 //Exposed method for connecting to URL provided in init method.
-- (void)connect {
+- (BOOL)connect {
     @synchronized (self) {
-        if(self.isCreated) {
-            return;
+        if (self.wsThread != nil) {
+            return YES;
         }
-        self.isCreated = YES;
+        self.didDisconnect = NO;
+        return [self createHTTPRequest];
     }
-    
-    __weak typeof(self) weakSelf = self;
-    dispatch_async(self.queue, ^{
-        weakSelf.didDisconnect = NO;
-    });
-
-    //everything is on a background thread.
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        @try {
-            [weakSelf createHTTPRequest];
-        } @finally {
-            weakSelf.isCreated = NO;
-        }
-    });
 }
 /////////////////////////////////////////////////////////////////////////////
 - (void)disconnect {
@@ -158,10 +157,13 @@ static const size_t  JFRMaxFrameSize        = 32;
 }
 /////////////////////////////////////////////////////////////////////////////
 - (void)writeString:(NSString*)string {
-    if(string) {
-        [self dequeueWrite:[string dataUsingEncoding:NSUTF8StringEncoding]
-                  withCode:JFROpCodeTextFrame];
+    @autoreleasepool {
+        if(string) {
+            [self dequeueWrite:[string dataUsingEncoding:NSUTF8StringEncoding]
+                      withCode:JFROpCodeTextFrame];
+        }
     }
+
 }
 /////////////////////////////////////////////////////////////////////////////
 - (void)writePing:(NSData*)data {
@@ -203,7 +205,7 @@ static const size_t  JFRMaxFrameSize        = 32;
 
 
 //Uses CoreFoundation to build a HTTP request to send over TCP stream.
-- (void)createHTTPRequest {
+- (BOOL)createHTTPRequest {
     CFURLRef url = CFURLCreateWithString(kCFAllocatorDefault, (CFStringRef)self.url.absoluteString, NULL);
     CFStringRef requestMethod = CFSTR("GET");
     CFHTTPMessageRef urlRequest = CFHTTPMessageCreateRequest(kCFAllocatorDefault,
@@ -259,8 +261,8 @@ static const size_t  JFRMaxFrameSize        = 32;
     NSLog(@"urlRequest = \"%@\"", urlRequest);
 #endif
     NSData *serializedRequest = (__bridge_transfer NSData *)(CFHTTPMessageCopySerializedMessage(urlRequest));
-    [self initStreamsWithData:serializedRequest port:port];
     CFRelease(urlRequest);
+    return [self initStreamsWithData:serializedRequest port:port];
 }
 /////////////////////////////////////////////////////////////////////////////
 //Random String of 16 lowercase chars, SHA1 and base64 encoded.
@@ -272,47 +274,81 @@ static const size_t  JFRMaxFrameSize        = 32;
     }
     return [[string dataUsingEncoding:NSUTF8StringEncoding] base64EncodedStringWithOptions:0];
 }
+
 /////////////////////////////////////////////////////////////////////////////
-//Sets up our reader/writer for the TCP stream.
-- (void)initStreamsWithData:(NSData*)data port:(NSNumber*)port {
-    CFReadStreamRef readStream = NULL;
-    CFWriteStreamRef writeStream = NULL;
-    CFStreamCreatePairWithSocketToHost(NULL, (__bridge CFStringRef)self.url.host, [port intValue], &readStream, &writeStream);
-    
-    self.inputStream = (__bridge_transfer NSInputStream *)readStream;
-    self.inputStream.delegate = self;
-    self.outputStream = (__bridge_transfer NSOutputStream *)writeStream;
-    self.outputStream.delegate = self;
-    if([self.url.scheme isEqualToString:@"wss"] || [self.url.scheme isEqualToString:@"https"]) {
-        [self.inputStream setProperty:NSStreamSocketSecurityLevelNegotiatedSSL forKey:NSStreamSocketSecurityLevelKey];
-        [self.outputStream setProperty:NSStreamSocketSecurityLevelNegotiatedSSL forKey:NSStreamSocketSecurityLevelKey];
-    } else {
-        self.certValidated = YES; //not a https session, so no need to check SSL pinning
-    }
-    if(self.voipEnabled) {
-        [self.inputStream setProperty:NSStreamNetworkServiceTypeVoIP forKey:NSStreamNetworkServiceType];
-        [self.outputStream setProperty:NSStreamNetworkServiceTypeVoIP forKey:NSStreamNetworkServiceType];
-    }
-    if(self.selfSignedSSL) {
-        NSString *chain = (__bridge_transfer NSString *)kCFStreamSSLValidatesCertificateChain;
-        NSString *peerName = (__bridge_transfer NSString *)kCFStreamSSLValidatesCertificateChain;
-        NSString *key = (__bridge_transfer NSString *)kCFStreamPropertySSLSettings;
-        NSDictionary *settings = @{chain: [[NSNumber alloc] initWithBool:NO],
-                                   peerName: [NSNull null]};
-        [self.inputStream setProperty:settings forKey:key];
-        [self.outputStream setProperty:settings forKey:key];
-    }
-    self.isRunLoop = YES;
+// socket i/o handler for seperate thread
+-(void)handleStream:(id)object
+{
     [self.inputStream scheduleInRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
     [self.outputStream scheduleInRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
-    [self.inputStream open];
-    [self.outputStream open];
-    size_t dataLen = [data length];
-    [self.outputStream write:[data bytes] maxLength:dataLen];
-    while (self.isRunLoop) {
+
+    while (![[NSThread currentThread] isCancelled]) {
         [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate distantFuture]];
     }
 }
+
+/////////////////////////////////////////////////////////////////////////////
+//Sets up our reader/writer for the TCP stream.
+- (BOOL)initStreamsWithData:(NSData*)data port:(NSNumber*)port {
+    @autoreleasepool {
+        CFReadStreamRef readStream = NULL;
+        CFWriteStreamRef writeStream = NULL;
+        CFStreamCreatePairWithSocketToHost(NULL, (__bridge CFStringRef)self.url.host, [port intValue], &readStream, &writeStream);
+
+        self.inputStream = (__bridge_transfer NSInputStream *)readStream;
+        self.inputStream.delegate = self;
+        self.outputStream = (__bridge_transfer NSOutputStream *)writeStream;
+        self.outputStream.delegate = self;
+        if([self.url.scheme isEqualToString:@"wss"] || [self.url.scheme isEqualToString:@"https"]) {
+            [self.inputStream setProperty:NSStreamSocketSecurityLevelNegotiatedSSL forKey:NSStreamSocketSecurityLevelKey];
+            [self.outputStream setProperty:NSStreamSocketSecurityLevelNegotiatedSSL forKey:NSStreamSocketSecurityLevelKey];
+        } else {
+            self.certValidated = YES; //not a https session, so no need to check SSL pinning
+        }
+        if(self.voipEnabled) {
+            [self.inputStream setProperty:NSStreamNetworkServiceTypeVoIP forKey:NSStreamNetworkServiceType];
+            [self.outputStream setProperty:NSStreamNetworkServiceTypeVoIP forKey:NSStreamNetworkServiceType];
+        }
+        if(self.selfSignedSSL) {
+            NSString *chain = (__bridge_transfer NSString *)kCFStreamSSLValidatesCertificateChain;
+            NSString *peerName = (__bridge_transfer NSString *)kCFStreamSSLValidatesCertificateChain;
+            NSString *key = (__bridge_transfer NSString *)kCFStreamPropertySSLSettings;
+            NSDictionary *settings = @{chain: [[NSNumber alloc] initWithBool:NO],
+                                       peerName: [NSNull null]};
+            [self.inputStream setProperty:settings forKey:key];
+            [self.outputStream setProperty:settings forKey:key];
+        }
+
+        //init worker thread
+        self.wsThread = [[NSThread alloc] initWithTarget:self selector:@selector(handleStream:) object:nil];
+        self.wsThread.name = @"jetfire.ws.worker";
+
+        [self.inputStream open];
+        [self.outputStream open];
+        size_t dataLen = [data length];
+        [self.outputStream write:[data bytes] maxLength:dataLen];
+
+        [self.inputStream scheduleInRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
+        [self.outputStream scheduleInRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
+
+        while (self.wsThread != nil && !self.isConnected) {
+            //process initial connect request synchronously
+            [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate distantFuture]];
+        }
+
+        [self.inputStream removeFromRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
+        [self.outputStream removeFromRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
+
+        if (self.wsThread != nil) {
+            // delegate work to worker thread
+            [self.wsThread start];
+            return YES;
+        }
+        return NO;
+    }
+}
+
+
 /////////////////////////////////////////////////////////////////////////////
 
 #pragma mark - NSStreamDelegate
@@ -366,7 +402,10 @@ static const size_t  JFRMaxFrameSize        = 32;
     [self.inputStream close];
     self.outputStream = nil;
     self.inputStream = nil;
-    self.isRunLoop = NO;
+    if (self.wsThread != nil && !self.wsThread.isCancelled) {
+        [self.wsThread cancel];
+    }
+    self.wsThread = nil;
     _isConnected = NO;
     self.certValidated = NO;
     [self doDisconnect:error];
@@ -446,7 +485,7 @@ static const size_t  JFRMaxFrameSize        = 32;
             _isConnected = YES;
             __weak typeof(self) weakSelf = self;
             dispatch_async(self.queue,^{
-                if([self.delegate respondsToSelector:@selector(websocketDidConnect:)]) {
+                if([weakSelf.delegate respondsToSelector:@selector(websocketDidConnect:)]) {
                     [weakSelf.delegate websocketDidConnect:self];
                 }
                 if(weakSelf.onConnect) {
@@ -650,38 +689,40 @@ static const size_t  JFRMaxFrameSize        = 32;
 }
 /////////////////////////////////////////////////////////////////////////////
 - (BOOL)processResponse:(JFRResponse*)response {
-    if(response.isFin && response.bytesLeft <= 0) {
-        NSData *data = response.buffer;
-        if(response.code == JFROpCodePing) {
-            [self dequeueWrite:response.buffer withCode:JFROpCodePong];
-        } else if(response.code == JFROpCodeTextFrame) {
-            NSString *str = [[NSString alloc] initWithData:response.buffer encoding:NSUTF8StringEncoding];
-            if(!str) {
-                [self writeError:JFRCloseCodeEncoding];
-                return NO;
+    @autoreleasepool {
+        if(response.isFin && response.bytesLeft <= 0) {
+            NSData *data = response.buffer;
+            if(response.code == JFROpCodePing) {
+                [self dequeueWrite:response.buffer withCode:JFROpCodePong];
+            } else if(response.code == JFROpCodeTextFrame) {
+                NSString *str = [[NSString alloc] initWithData:response.buffer encoding:NSUTF8StringEncoding];
+                if(!str) {
+                    [self writeError:JFRCloseCodeEncoding];
+                    return NO;
+                }
+                __weak typeof(self) weakSelf = self;
+                dispatch_async(self.queue,^{
+                    if([weakSelf.delegate respondsToSelector:@selector(websocket:didReceiveMessage:)]) {
+                        [weakSelf.delegate websocket:weakSelf didReceiveMessage:str];
+                    }
+                    if(weakSelf.onText) {
+                        weakSelf.onText(str);
+                    }
+                });
+            } else if(response.code == JFROpCodeBinaryFrame) {
+                __weak typeof(self) weakSelf = self;
+                dispatch_async(self.queue,^{
+                    if([weakSelf.delegate respondsToSelector:@selector(websocket:didReceiveData:)]) {
+                        [weakSelf.delegate websocket:weakSelf didReceiveData:data];
+                    }
+                    if(weakSelf.onData) {
+                        weakSelf.onData(data);
+                    }
+                });
             }
-            __weak typeof(self) weakSelf = self;
-            dispatch_async(self.queue,^{
-                if([weakSelf.delegate respondsToSelector:@selector(websocket:didReceiveMessage:)]) {
-                    [weakSelf.delegate websocket:weakSelf didReceiveMessage:str];
-                }
-                if(weakSelf.onText) {
-                    weakSelf.onText(str);
-                }
-            });
-        } else if(response.code == JFROpCodeBinaryFrame) {
-            __weak typeof(self) weakSelf = self;
-            dispatch_async(self.queue,^{
-                if([weakSelf.delegate respondsToSelector:@selector(websocket:didReceiveData:)]) {
-                    [weakSelf.delegate websocket:weakSelf didReceiveData:data];
-                }
-                if(weakSelf.onData) {
-                    weakSelf.onData(data);
-                }
-            });
+            [self.readStack removeLastObject];
+            return YES;
         }
-        [self.readStack removeLastObject];
-        return YES;
     }
     return NO;
 }
