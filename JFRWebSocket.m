@@ -118,13 +118,13 @@ static const size_t  JFRMaxFrameSize        = 32;
 //Default initializer
 - (instancetype)initWithURL:(NSURL *)url protocols:(NSArray*)protocols
 {
-    return [self initWithURLAndQueue:url protocols:protocols callbackQueue:dispatch_get_global_queue(QOS_CLASS_UTILITY, 0)];
+    return [self initWithURL:url protocols:protocols callbackQueue:dispatch_get_global_queue(QOS_CLASS_UTILITY, 0)];
 
 }
 
 /////////////////////////////////////////////////////////////////////////////
 //Initialized with custom dispatch queue
-- (instancetype)initWithURLAndQueue:(NSURL *)url protocols:(NSArray*)protocols callbackQueue:(dispatch_queue_t)callbackQueue
+- (instancetype)initWithURL:(NSURL *)url protocols:(NSArray*)protocols callbackQueue:(dispatch_queue_t)callbackQueue
 {
     if(self = [super init]) {
         self.certValidated = NO;
