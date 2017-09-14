@@ -150,18 +150,7 @@
         SecTrustResultType result = 0;
         SecTrustEvaluate(trust,&result);
         if(result == kSecTrustResultUnspecified || result == kSecTrustResultProceed) {
-            NSInteger trustedCount = 0;
-            for(NSData *serverData in serverCerts) {
-                for(NSData *certData in self.certificates) {
-                    if([certData isEqualToData:serverData]) {
-                        trustedCount++;
-                        break;
-                    }
-                }
-            }
-            if(trustedCount == serverCerts.count) {
                 status = YES;
-            }
         }
     }
     
