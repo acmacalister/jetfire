@@ -776,7 +776,7 @@ static const size_t  JFRMaxFrameSize        = 32;
 - (NSError*)errorWithDetail:(NSString*)detail code:(NSInteger)code userInfo:(NSDictionary *)userInfo
 {
     NSMutableDictionary* details = [NSMutableDictionary dictionary];
-    details[detail] = NSLocalizedDescriptionKey;
+    details[NSLocalizedDescriptionKey] = detail;
     if (userInfo) {
         [details addEntriesFromDictionary:userInfo];
     }
