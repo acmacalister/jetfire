@@ -288,15 +288,31 @@ static const size_t  JFRMaxFrameSize        = 32;
         [self.inputStream setProperty:NSStreamNetworkServiceTypeVoIP forKey:NSStreamNetworkServiceType];
         [self.outputStream setProperty:NSStreamNetworkServiceTypeVoIP forKey:NSStreamNetworkServiceType];
     }
+    
+    NSMutableDictionary *settings = [NSMutableDictionary dictionary];
+    
+    NSString *chain = (__bridge_transfer NSString *)kCFStreamSSLValidatesCertificateChain;
+    NSString *sslCert = (__bridge_transfer NSString *)kCFStreamSSLCertificates;
+    NSString *key = (__bridge_transfer NSString *)kCFStreamPropertySSLSettings;
+    
     if(self.selfSignedSSL) {
-        NSString *chain = (__bridge_transfer NSString *)kCFStreamSSLValidatesCertificateChain;
-        NSString *peerName = (__bridge_transfer NSString *)kCFStreamSSLValidatesCertificateChain;
-        NSString *key = (__bridge_transfer NSString *)kCFStreamPropertySSLSettings;
-        NSDictionary *settings = @{chain: [[NSNumber alloc] initWithBool:NO],
-                                   peerName: [NSNull null]};
-        [self.inputStream setProperty:settings forKey:key];
-        [self.outputStream setProperty:settings forKey:key];
+        [settings setObject:[[NSNumber alloc] initWithBool:NO] forKey:chain];
     }
+    
+    if (self.p12Data) {
+        SecIdentityRef identity = NULL;
+        SecTrustRef trust = NULL;
+        
+        [self extractIdentity:&identity andTrust:&trust fromPKCS12Data:self.p12Data];
+        
+        if (identity) {
+            [settings setObject:@[(__bridge id)identity] forKey:sslCert];
+        }
+    }
+    
+    [self.inputStream setProperty:settings forKey:key];
+    [self.outputStream setProperty:settings forKey:key];
+
     self.isRunLoop = YES;
     [self.inputStream scheduleInRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
     [self.outputStream scheduleInRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
@@ -367,6 +383,38 @@ static const size_t  JFRMaxFrameSize        = 32;
     [self doDisconnect:error];
 }
 /////////////////////////////////////////////////////////////////////////////
+
+
+
+#pragma mark - Helper
+
+- (BOOL)extractIdentity:(SecIdentityRef *)outIdentity andTrust:(SecTrustRef*)outTrust fromPKCS12Data:(NSData *)inPKCS12Data {
+    
+    
+    OSStatus securityError = errSecSuccess;
+    
+    //client certificate password
+    NSDictionary *optionsDictionary = [NSDictionary dictionaryWithObject:self.p12Pwd
+                                                                  forKey:(__bridge id)kSecImportExportPassphrase];
+    
+    CFArrayRef items = CFArrayCreate(NULL, 0, 0, NULL);
+
+    securityError = SecPKCS12Import((CFDataRef)inPKCS12Data, (__bridge CFDictionaryRef)optionsDictionary,&items);
+    
+    if (securityError == 0) {
+        CFDictionaryRef myIdentityAndTrust = CFArrayGetValueAtIndex (items, 0);
+        const void *tempIdentity = NULL;
+        tempIdentity = CFDictionaryGetValue (myIdentityAndTrust, kSecImportItemIdentity);
+        *outIdentity = (SecIdentityRef)tempIdentity;
+        const void *tempTrust = NULL;
+        tempTrust = CFDictionaryGetValue (myIdentityAndTrust, kSecImportItemTrust);
+        *outTrust = (SecTrustRef)tempTrust;
+    } else {
+        NSLog(@"Failed with error code %d",(int)securityError);
+        return NO;
+    }
+    return YES;
+}
 
 #pragma mark - Stream Processing Methods
 

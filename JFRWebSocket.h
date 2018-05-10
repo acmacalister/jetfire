@@ -64,7 +64,8 @@
 
 @property(nonatomic,weak, nullable)id<JFRWebSocketDelegate>delegate;
 @property(nonatomic, readonly, nonnull) NSURL *url;
-
+@property(nonatomic, strong, nullable) NSData *p12Data;
+@property(nonatomic, strong, nullable) NSData *p12Pwd;
 /**
  constructor to create a new websocket.
  @param url       the host you want to connect to.
