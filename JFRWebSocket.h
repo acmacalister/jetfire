@@ -83,6 +83,16 @@
 - (nonnull instancetype)initWithURLAndQueue:(nonnull NSURL *)url protocols:(nonnull NSArray*)protocols callbackQueue:(nonnull dispatch_queue_t)callbackQueue;
 
 /**
+ constructor to create a new websocket
+ @param url       the host you want to connect to.
+ @param protocols the websocket protocols you want to use (e.g. chat,superchat).
+ @param callbackQueue the dispatch queue for handling callbacks
+ @param connectTimeout timeout for blocking connect
+ @return a newly initalized websocket.
+ */
+- (nonnull instancetype)initWithURL:(NSURL *)url protocols:(NSArray*)protocols callbackQueue:(dispatch_queue_t)callbackQueue connectTimeout:(NSTimeInterval)connectTimeout;
+
+/**
  connect to the host - blocking
  @return YES if successfully connected
  */

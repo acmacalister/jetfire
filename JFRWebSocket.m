@@ -48,7 +48,8 @@ typedef NS_ENUM(NSUInteger, JFRCloseCode) {
 
 typedef NS_ENUM(NSUInteger, JFRInternalErrorCode) {
     // 0-999 WebSocket status codes not used
-    JFROutputStreamWriteError  = 1
+    JFROutputStreamWriteError  = 1,
+    JFRConnectTimeout          = 2
 };
 
 #define kJFRInternalHTTPStatusWebSocket 101
@@ -78,6 +79,7 @@ typedef NS_ENUM(NSUInteger, JFRInternalErrorCode) {
 @property(nonatomic, assign)BOOL isCreated;
 @property(nonatomic, assign)BOOL didDisconnect;
 @property(nonatomic, assign)BOOL certValidated;
+@property(nonatomic, assign)NSTimeInterval connectTimeout;
 
 @property (strong) NSThread *wsThread;
 
@@ -111,6 +113,9 @@ static const uint8_t JFRMaskMask            = 0x80;
 static const uint8_t JFRPayloadLenMask      = 0x7F;
 static const size_t  JFRMaxFrameSize        = 32;
 
+
+static const NSTimeInterval JFRDefaultConnectTimeout = 10.0;
+
 @implementation JFRWebSocket
 
 
@@ -119,12 +124,18 @@ static const size_t  JFRMaxFrameSize        = 32;
 - (instancetype)initWithURL:(NSURL *)url protocols:(NSArray*)protocols
 {
     return [self initWithURL:url protocols:protocols callbackQueue:dispatch_get_global_queue(QOS_CLASS_UTILITY, 0)];
-
 }
 
 /////////////////////////////////////////////////////////////////////////////
 //Initialized with custom dispatch queue
 - (instancetype)initWithURL:(NSURL *)url protocols:(NSArray*)protocols callbackQueue:(dispatch_queue_t)callbackQueue
+{
+    return [self initWithURL:url protocols:protocols callbackQueue:callbackQueue connectTimeout:JFRDefaultConnectTimeout];
+}
+
+/////////////////////////////////////////////////////////////////////////////
+//Initialized with custom dispatch queue and connection timeout
+- (instancetype)initWithURL:(NSURL *)url protocols:(NSArray*)protocols callbackQueue:(dispatch_queue_t)callbackQueue connectTimeout:(NSTimeInterval)connectTimeout
 {
     if(self = [super init]) {
         self.certValidated = NO;
@@ -135,8 +146,8 @@ static const size_t  JFRMaxFrameSize        = 32;
         self.readStack = [NSMutableArray new];
         self.inputQueue = [NSMutableArray new];
         self.optProtocols = protocols;
+        self.connectTimeout = connectTimeout;
     }
-    
     return self;
 }
 
@@ -319,22 +330,26 @@ static const size_t  JFRMaxFrameSize        = 32;
             [self.outputStream setProperty:settings forKey:key];
         }
 
-        //init worker thread
-        self.wsThread = [[NSThread alloc] initWithTarget:self selector:@selector(handleStream:) object:nil];
-        self.wsThread.name = @"jetfire.ws.worker";
-
         [self.inputStream open];
         [self.outputStream open];
         size_t dataLen = [data length];
         [self.outputStream write:[data bytes] maxLength:dataLen];
-
+        
         [self.inputStream scheduleInRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
         [self.outputStream scheduleInRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
-
-        while (self.wsThread != nil && !self.isConnected) {
+        NSDate *timeoutDate = [[NSDate date] dateByAddingTimeInterval:self.connectTimeout];
+        while (!self.isConnected) {
             //process initial connect request synchronously
-            [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate distantFuture]];
+            if ((!self.isConnected && [[NSDate date] compare:timeoutDate] == NSOrderedDescending)) {
+                [self disconnectStream:[self errorWithDetail:@"Websocket connect timeout" code:JFRConnectTimeout]];
+                return NO;
+            }
+            [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[timeoutDate dateByAddingTimeInterval:1.0]]; // Add 1 sec to prevent race condition with beforeDate being in the past
         }
+        
+        //init worker thread
+        self.wsThread = [[NSThread alloc] initWithTarget:self selector:@selector(handleStream:) object:nil];
+        self.wsThread.name = @"jetfire.ws.worker";
 
         [self.inputStream removeFromRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
         [self.outputStream removeFromRunLoop:[NSRunLoop currentRunLoop] forMode:NSDefaultRunLoopMode];
