@@ -84,6 +84,7 @@
 /////////////////////////////////////////////////////////////////////////////
 - (instancetype)initWithCerts:(NSArray<JFRSSLCert*>*)certs publicKeys:(BOOL)publicKeys {
     if(self = [super init]) {
+        self.validateEntireChain = YES;
         self.validatedDN = YES;
         self.usePublicKeys = publicKeys;
         if(self.usePublicKeys) {
@@ -150,6 +151,10 @@
         SecTrustResultType result = 0;
         SecTrustEvaluate(trust,&result);
         if(result == kSecTrustResultUnspecified || result == kSecTrustResultProceed) {
+
+            if (!self.validateEntireChain) {
+                return true;
+            }
             NSInteger trustedCount = 0;
             for(NSData *serverData in serverCerts) {
                 for(NSData *certData in self.certificates) {

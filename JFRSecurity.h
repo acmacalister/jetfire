@@ -72,6 +72,11 @@
 @property(nonatomic)BOOL validatedDN;
 
 /**
+ Should the entire root cert signing chain be validated? Default is YES
+ */
+@property(nonatomic)BOOL validateEntireChain;
+
+/**
  Validate if the cert is legit or not.
  :param:  trust is the trust to validate
  :param: domain to validate along with the trust (can be nil)
