@@ -147,9 +147,21 @@
             [collect addObject:CFBridgingRelease(SecCertificateCreateWithData(nil,(__bridge CFDataRef)data))];
         }
         SecTrustSetAnchorCertificates(trust,(__bridge CFArrayRef)collect);
-        SecTrustResultType result = 0;
-        SecTrustEvaluate(trust,&result);
-        if(result == kSecTrustResultUnspecified || result == kSecTrustResultProceed) {
+        BOOL evaluates = NO;
+        if (@available(iOS 12.0, macOS 10.14, *)) {
+            evaluates = (SecTrustEvaluateWithError(trust, nil));
+        } else {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+            // Fallback on earlier versions
+            SecTrustResultType result = 0;
+            SecTrustEvaluate(trust,&result);
+            if(result == kSecTrustResultUnspecified || result == kSecTrustResultProceed) {
+                evaluates = YES;
+            }
+#pragma clang diagnostic pop
+        }
+        if (evaluates) {
             NSInteger trustedCount = 0;
             for(NSData *serverData in serverCerts) {
                 for(NSData *certData in self.certificates) {
@@ -182,8 +194,18 @@
     
     SecTrustRef trust;
     SecTrustCreateWithCertificates(cert,policy,&trust);
-    SecTrustResultType result = kSecTrustResultInvalid;
-    SecTrustEvaluate(trust,&result);
+    if (@available(iOS 12.0, macOS 10.14, *)) {
+        if (SecTrustEvaluateWithError(trust, nil)) {
+            
+        }
+    } else {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+        // Fallback on earlier versions
+        SecTrustResultType result = kSecTrustResultInvalid;
+        SecTrustEvaluate(trust,&result);
+#pragma clang diagnostic pop
+    }
     SecKeyRef key = SecTrustCopyPublicKey(trust);
     CFRelease(trust);
     return key;
