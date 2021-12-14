@@ -1,9 +1,8 @@
 //////////////////////////////////////////////////////////////////////////////////////////////////
 //
-//  AppDelegate.h
-//  SimpleTest
+//  Jetfire.h
 //
-//  Created by Austin and Dalton Cherry on on 2/24/15.
+//  Created by Sam Soffes on 9/26/16.
 //  Copyright (c) 2014-2017 Austin Cherry.
 //
 //  Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,12 +19,13 @@
 //
 //////////////////////////////////////////////////////////////////////////////////////////////////
 
-#import <UIKit/UIKit.h>
+#include <TargetConditionals.h>
 
-@interface AppDelegate : UIResponder <UIApplicationDelegate>
+#if TARGET_OS_IPHONE || TARGET_OS_SIMULATOR
+@import Foundation;
+#else
+#import <Cocoa/Cocoa.h>
+#endif
 
-@property (strong, nonatomic) UIWindow *window;
-
-
-@end
-
+#import "JFRWebSocket.h"
+#import "JFRSecurity.h"
