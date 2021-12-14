@@ -19,7 +19,9 @@
 //
 //////////////////////////////////////////////////////////////////////////////////////////////////
 
-#if !TARGET_OS_OSX
+#include <TargetConditionals.h>
+
+#if TARGET_OS_IPHONE || TARGET_OS_SIMULATOR
 @import Foundation;
 #else
 #import <Cocoa/Cocoa.h>
