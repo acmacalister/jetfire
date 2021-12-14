@@ -183,7 +183,7 @@ Check out the SimpleTest project in the examples directory to see how to setup a
 ## Install ##
 
 ~~The recommended approach for installing Jetfire is via the CocoaPods package manager (like most libraries).~~
-- With release 0.1.8, we removed support for CocoaPods and instead migrate to use Swift Package Manager for dependency manangement. With Swift Package Manager setup, simply add this to your dependencies:
+With release 0.1.8, we removed support for CocoaPods and instead migrate to use Swift Package Manager for dependency manangement. With Swift Package Manager setup, simply add this to your dependencies:
 
 ```swift
 dependencies: [
